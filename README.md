@@ -1,13 +1,12 @@
 # ENVJS
+## WEBSITE DELAYED UNTIL 1.3.0! SORRY!
 
 A simple low level control JS library made to ease low level development.
 To install:
 
 ```bash
-npm install envjs
+npm install envjsc
 ```
-
-All modules and documentation can be found on the [EnvJS Site](www.envjs.vercel.app) -> ## NOT MADE YET! It will come in Version 1.1.5!
 
 ## Maintained by [Ebaad](https://www.github.com/mebaadwaheed) 
 
@@ -24,7 +23,7 @@ A lightweight Node.js environment wrapper providing simplified access to core mo
 ## Getting Started
 
 ```javascript
-import envjs from "envjs";
+import envjs from "envjsc";
 const app = envjs();
 
 // Access a module
@@ -45,6 +44,12 @@ console.log(file.readFileSync("example.txt")); // Outputs: Hello from envjs!
 - Mocking support for testing with mock module
 - Plugin system for extending functionality with plugin module
 - Auto-loading multiple modules with loader module
+- Direct command execution with template literals via env.$
+- Cron-style task scheduling via env.schedule
+- Task definition and management system via env.task/env.tasks
+- File watching capabilities with env.watch
+- NoSQL-style JSON database with env.db
+- CLI application creation via env.cli
 
 ## Available Modules
 
@@ -453,6 +458,202 @@ These methods are available directly on the envjs instance:
 - **mock(keyPath, mockFn)** - Mocks a function (alias for mock.mock)
 - **restore(keyPath?)** - Restores mocked functions (alias for mock.restore)
 - **register(name, moduleContent)** - Registers a custom module (alias for plugin.register)
+
+## Direct Access APIs
+
+These powerful utilities are available directly from the env instance without needing to use the module system:
+
+### env.$ - Async Shell Commands
+
+Execute shell commands using template literals, similar to the zx library:
+
+```javascript
+const app = envjs();
+
+// Execute a command and get the result
+const result = await app.$`ls -la`;
+console.log(result.stdout);
+
+// Commands with variables
+const dir = "src";
+const files = await app.$`find ${dir} -type f -name "*.js"`;
+
+// Handle command errors
+try {
+  await app.$`command-that-fails`;
+} catch (error) {
+  console.error(`Command failed with code ${error.code}`);
+  console.error(error.stderr);
+}
+```
+
+### env.state - Global State Management
+
+Direct alias to the store module providing persistent state management:
+
+```javascript
+const app = envjs();
+
+// Set values
+app.state.set('counter', 1);
+app.state.set('user.name', 'John');
+
+// Get values
+console.log(app.state.get('counter')); // 1
+console.log(app.state.get('user.name')); // John
+
+// Delete values
+app.state.delete('counter');
+
+// Get all data
+console.log(app.state.all());
+```
+
+### env.schedule - Cron-based Task Scheduler
+
+Schedule tasks to run at specific times using cron syntax:
+
+```javascript
+const app = envjs();
+
+// Run a task every minute
+const id1 = app.schedule.cron('* * * * *', () => {
+  console.log('Running every minute');
+});
+
+// Run a task at 8:30 AM every day
+const id2 = app.schedule.cron('30 8 * * *', () => {
+  console.log('Good morning!');
+});
+
+// Stop a scheduled task
+app.schedule.stop(id1);
+
+// List all scheduled tasks
+console.log(app.schedule.list());
+```
+
+### env.task and env.tasks - Task Runner
+
+Define, run, and manage named tasks:
+
+```javascript
+const app = envjs();
+
+// Define a task
+app.task('build', async () => {
+  console.log('Building project...');
+  await app.$`npm run build`;
+  return 'Build completed';
+});
+
+// Run a task
+const result = await app.tasks.run('build');
+console.log(result); // Build completed
+
+// List available tasks
+console.log(app.tasks.list()); // ['build']
+
+// Schedule a task using cron
+app.tasks.schedule('build', '0 0 * * *'); // Run at midnight
+
+// Remove a task
+app.tasks.remove('build');
+```
+
+### env.watch - File Watcher
+
+Watch files and directories for changes:
+
+```javascript
+const app = envjs();
+
+// Watch a file
+const watcher = app.watch('file.txt', (events) => {
+  console.log('File changed:', events);
+});
+
+// Watch a directory with options
+const dirWatcher = app.watch('src', {
+  recursive: true,           // Watch subdirectories
+  filter: /\.js$/,           // Only watch .js files
+  debounceMs: 300,           // Wait 300ms before firing events
+  ignoreInitial: true,       // Don't trigger on initial scan
+  onAdd: (file) => console.log(`${file} was added`),
+  onChange: (file) => console.log(`${file} was changed`),
+  onDelete: (file) => console.log(`${file} was deleted`),
+});
+
+// Stop watching
+watcher.close();
+dirWatcher.close();
+```
+
+### env.db - JSON Database
+
+A simple NoSQL-style database with collections:
+
+```javascript
+const app = envjs();
+
+// Get a collection
+const users = app.db.collection('users');
+
+// Insert documents
+await users.insert({ id: 1, name: 'Alice', age: 30 });
+await users.insert({ id: 2, name: 'Bob', age: 25 });
+
+// Find documents
+const allUsers = await users.find();
+const user = await users.findOne({ id: 1 });
+const youngUsers = await users.find({ age: { $lt: 30 } });
+
+// Update documents
+await users.update({ id: 1 }, { $set: { age: 31 } });
+
+// Remove documents
+await users.remove({ id: 2 });
+
+// Count documents
+const count = await users.count({ age: { $gt: 25 } });
+```
+
+### env.cli - Command-Line Interface Creator
+
+Create command-line interfaces with argument parsing:
+
+```javascript
+const app = envjs();
+
+// Define a CLI application
+const cli = app.cli({
+  name: 'myapp',
+  version: '1.0.0',
+  description: 'My awesome CLI application'
+});
+
+// Define commands
+cli.command('greet', {
+  description: 'Greet a person',
+  args: [
+    { name: 'name', description: 'Person to greet', required: true }
+  ],
+  options: [
+    { name: 'loud', alias: 'l', description: 'Use uppercase', type: 'boolean' }
+  ],
+  action: (args, options) => {
+    let message = `Hello, ${args.name}!`;
+    if (options.loud) message = message.toUpperCase();
+    console.log(message);
+  }
+});
+
+// Parse command-line arguments
+cli.parse();
+
+// Manually run a command
+cli.run('greet', { name: 'World' }, { loud: true });
+```
 
 ## Notes
 

@@ -621,11 +621,260 @@ console.log('Events - Emitting testEvent...');
 emitter.emit('testEvent', 'hello', 123);
 
 
+// 11. Test $ (Async Shell Commands)
+console.log('\n--- Testing $ (Async Shell Commands) ---');
+(async () => {
+  try {
+    const echoOutput = await env.$`echo Hello from env.$`;
+    console.log('$ - Echo command stdout:', echoOutput.stdout.trim());
+
+    // Test with a command that might produce stderr (e.g., listing a non-existent file)
+    // Note: Behavior of stderr can vary. Some commands output to stdout even for errors.
+    const lsError = await env.$`ls non_existent_file_for_test_stderr`;
+    if (lsError.stderr) {
+      console.log('$ - ls non_existent_file_for_test_stderr stderr:', lsError.stderr.trim());
+    }
+    // Depending on the shell, `ls` for a non-existent file might still exit with 0
+    // and print to stderr or stdout. This test is more about capturing output.
+  } catch (error) {
+    // This catch block will trigger if execAsync itself throws (e.g., command not found, or exit code is non-zero depending on shell options)
+    console.error('$ - Error executing command:', error.message);
+    if (error.stderr) {
+        console.error('$ - Command stderr:', error.stderr.trim());
+    }
+    if (error.stdout) {
+        console.error('$ - Command stdout (on error):', error.stdout.trim());
+    }
+  }
+})();
+
+// 12. Test env.state alias
+console.log('\n--- Testing env.state alias ---');
+env.state.set('aliasTest.data', 'Data set via env.state');
+console.log('env.state - Get data:', env.state.get('aliasTest.data'));
+console.log('env.state - All data after alias set:', env.state.all());
+env.state.delete('aliasTest.data');
+console.log('env.state - Data after delete:', env.state.get('aliasTest.data', 'Default if not found'));
+
+
+// 13. Test env.schedule() alias
+console.log('\n--- Testing env.schedule() alias ---');
+const scheduleAliasId = env.schedule('*/1 * * * *', () => { // Simplified cron: runs if minute matches
+  console.log('Scheduler (env.schedule alias): Task is running!');
+}, 'aliasScheduleTask');
+console.log(`env.schedule - Scheduled task with ID: ${scheduleAliasId}. Will run based on (simplified) cron.`);
+// Allow it to run once or twice, then stop it later in the script if needed.
+
+
+// 14. Test Task Runner (env.task and env.tasks)
+console.log('\n--- Testing Task Runner (env.task and env.tasks) ---');
+
+// Define tasks using env.task()
+env.task('simpleTask', async () => {
+  console.log('Task Runner: simpleTask is running.');
+  await new Promise(resolve => setTimeout(resolve, 50)); // Simulate async work
+  return 'simpleTask completed';
+});
+
+env.task('taskWithArgs', async (arg1, arg2 = 'default') => {
+  console.log(`Task Runner: taskWithArgs running with: ${arg1}, ${arg2}`);
+  return `Received: ${arg1}, ${arg2}`;
+});
+
+env.task('errorTask', async () => {
+  console.log('Task Runner: errorTask is running and will throw an error.');
+  throw new Error('Intentional error from errorTask');
+});
+
+(async () => {
+  // List tasks using env.tasks.list()
+  console.log('Task Runner - Available tasks:', env.tasks.list());
+
+  // Run tasks using env.tasks.run()
+  try {
+    const simpleResult = await env.tasks.run('simpleTask');
+    console.log('Task Runner - simpleTask result:', simpleResult);
+
+    const argsResult = await env.tasks.run('taskWithArgs', 'hello', 'world');
+    console.log('Task Runner - taskWithArgs result:', argsResult);
+
+    const defaultArgResult = await env.tasks.run('taskWithArgs', 'onlyOne');
+    console.log('Task Runner - taskWithArgs (default) result:', defaultArgResult);
+
+    console.log('Task Runner - Attempting to run errorTask...');
+    await env.tasks.run('errorTask');
+  } catch (error) {
+    console.error('Task Runner - Caught error from errorTask:', error.message);
+  }
+
+  // Test running a non-existent task
+  try {
+    console.log('Task Runner - Attempting to run nonExistentTask...');
+    await env.tasks.run('nonExistentTask');
+  } catch (error) {
+    console.error('Task Runner - Caught expected error for nonExistentTask:', error.message);
+  }
+
+  // Schedule a task using env.tasks.schedule()
+  const taskScheduleId = env.tasks.schedule('simpleTask', '*/2 * * * *', 'scheduledSimpleTask'); // Simplified cron
+  console.log(`Task Runner - Scheduled 'simpleTask' (ID: ${taskScheduleId}). Will run based on (simplified) cron.`);
+
+  // Attempt to schedule a non-existent task
+  try {
+    console.log('Task Runner - Attempting to schedule nonExistentTaskForScheduling...');
+    env.tasks.schedule('nonExistentTaskForScheduling', '* * * * *');
+  } catch (error) {
+    console.error('Task Runner - Caught expected error for scheduling nonExistentTask:', error.message);
+  }
+})();
+
+
+// 15. Test DB Module
+(async () => {
+  console.log('\n--- Testing DB Module ---');
+  const env = envjs(); // Ensure env is scoped for this async test block if not already global
+
+  // Get a collection
+  const users = env.db.collection('users');
+  const posts = env.db.collection('Posts'); // Test case-insensitivity for collection name
+
+  // Clear existing data from previous runs (optional)
+  console.log('DB: Clearing existing test collections...');
+  users.clear();
+  posts.clear();
+  console.log('DB: Users count after clear:', users.count());
+  console.log('DB: Posts count after clear:', posts.count());
+
+  // Insert documents
+  console.log('\nDB: Inserting documents...');
+  const alice = users.insert({ name: 'Alice', age: 30, city: 'New York', tags: ['dev', 'js'] });
+  const bob = users.insert({ name: 'Bob', age: 24, city: 'London', tags: ['dev', 'python'] });
+  const charlie = users.insert({ name: 'Charlie', age: 35, city: 'New York', tags: ['qa', 'js'] });
+  console.log('DB: Inserted Alice:', alice);
+  console.log('DB: Inserted Bob:', bob);
+
+  // Insert multiple
+  const moreUsers = users.insert([
+    { name: 'David', age: 24, city: 'Paris', tags: ['dev', 'go'] },
+    { name: 'Eve', age: 30, city: 'Berlin', tags: ['pm', 'js'] }
+  ]);
+  console.log('DB: Inserted multiple users:', moreUsers);
+  console.log('DB: Total users count:', users.count());
+
+  // Find documents
+  console.log('\nDB: Finding documents...');
+  const allUsers = users.find();
+  console.log('DB: All users:', allUsers);
+
+  const usersInNewYork = users.find({ city: 'New York' });
+  console.log('DB: Users in New York:', usersInNewYork);
+
+  const devsAge30 = users.find({ age: 30, tags: ['dev', 'js'] });
+  console.log('DB: Devs aged 30 with exact tags [dev, js]:', devsAge30);
+
+  // Find one document
+  console.log('\nDB: Finding one document...');
+  const firstBob = users.findOne({ name: 'Bob' });
+  console.log('DB: Found Bob:', firstBob);
+
+  const nonExistent = users.findOne({ name: 'Zoe' });
+  console.log('DB: Found Zoe (non-existent):', nonExistent);
+
+  // Update documents
+  console.log('\nDB: Updating documents...');
+  const bobUpdate = users.update({ name: 'Bob' }, { age: 25, status: 'active' });
+  console.log('DB: Bob update result:', bobUpdate);
+  console.log('DB: Updated Bob:', users.findOne({ _id: bob._id }));
+
+  const nyUpdate = users.update({ city: 'New York' }, { region: 'East Coast' }, { multi: true });
+  console.log('DB: New York update result:', nyUpdate);
+  users.find({ city: 'New York' }).forEach(u => console.log('DB: NY User after region update:', u));
+
+  const charlieId = charlie._id;
+  const charlieFuncUpdate = users.update(
+    { _id: charlieId },
+    (doc) => {
+      doc.age += 1;
+      doc.status = 'active';
+      doc.tags.push('lead');
+      return doc;
+    }
+  );
+  console.log('DB: Charlie functional update result:', charlieFuncUpdate);
+  console.log('DB: Updated Charlie:', users.findOne({ _id: charlieId }));
+
+  console.log('\nDB: Testing upsert...');
+  const zoeUpsert = users.update({ name: 'Zoe' }, { age: 28, city: 'Madrid', tags: ['new'] }, { upsert: true });
+  console.log('DB: Zoe upsert result:', zoeUpsert);
+  console.log('DB: Zoe after upsert:', users.findOne({ name: 'Zoe' }));
+
+  const davidUpsertExisting = users.update({ name: 'David' }, { age: 25 }, { upsert: true });
+  console.log('DB: David upsert (existing) result:', davidUpsertExisting);
+  console.log('DB: David after upsert (age should be 25):', users.findOne({ name: 'David' }));
+
+  console.log('\nDB: Counting documents...');
+  console.log('DB: Total users:', users.count());
+  console.log('DB: Users in Paris:', users.count({ city: 'Paris' }));
+  console.log('DB: Active users:', users.count({ status: 'active' }));
+
+  console.log('\nDB: Removing documents...');
+  const removeBobResult = users.remove({ name: 'Bob' });
+  console.log('DB: Remove Bob result:', removeBobResult);
+  console.log('DB: Bob exists after remove?', !!users.findOne({ name: 'Bob' }));
+  console.log('DB: Users count after Bob removal:', users.count());
+
+  const removeParisResult = users.remove({ city: 'Paris' }, { multi: true });
+  console.log('DB: Remove Paris users result:', removeParisResult);
+  console.log('DB: Paris users count after removal:', users.count({city: 'Paris'}));
+
+  console.log('\nDB: Clearing "posts" collection...');
+  posts.insert({ title: 'A post to be cleared' });
+  console.log('DB: Posts count before clear:', posts.count());
+  const clearResult = posts.clear();
+  console.log('DB: Clear posts result:', clearResult);
+  console.log('DB: Posts count after clear:', posts.count());
+
+  // Test inserting non-object
+  console.log('\nDB: Testing inserting non-object...');
+  const invalidInsert = users.insert(123);
+  console.log('DB: Result of inserting number:', invalidInsert);
+  const invalidInsertNull = users.insert(null);
+  console.log('DB: Result of inserting null:', invalidInsertNull);
+  console.log('DB: Users count after invalid inserts:', users.count());
+
+  // Test find with empty query and no query
+  console.log('\nDB: Testing find with empty/no query...');
+  console.log('DB: users.find({}):', users.find({}).length);
+  console.log('DB: users.find():', users.find().length);
+
+  // Test findOne with empty query and no query
+  console.log('DB: users.findOne({}):', users.findOne({}));
+  console.log('DB: users.findOne():', users.findOne());
+
+  console.log('\n--- DB Module Test Finished within test.js ---');
+})().catch(err => console.error('DB Test Block Error:', err));
+
+
 // Keep the process alive for a bit to let scheduled tasks and monitor run
 // In a real application, your server or other logic would keep the process running.
 // For this test script, we'll use a long timeout.
 const keepAliveDuration = 20000; // 20 seconds
-console.log(`\nKeeping test script alive for ${keepAliveDuration / 1000} seconds to observe background tasks (scheduler, monitor).`);
+console.log(`\nKeeping test script alive for ${keepAliveDuration / 1000} seconds to observe background tasks (scheduler, monitor, scheduled tasks).`);
+
+// Example of stopping a scheduled task after some time:
+setTimeout(() => {
+  if (scheduleAliasId) {
+    console.log(`\nStopping env.schedule alias task: ${scheduleAliasId}`);
+    env.use('scheduler').stop(scheduleAliasId);
+  }
+  const scheduledSimpleTaskFromList = env.use('scheduler').list().find(id => id.includes('scheduledSimpleTask'));
+  if (scheduledSimpleTaskFromList) {
+      console.log(`Stopping env.tasks.schedule task: ${scheduledSimpleTaskFromList}`);
+      env.use('scheduler').stop(scheduledSimpleTaskFromList);
+  }
+  console.log('Current scheduled tasks after cleanup attempts:', env.use('scheduler').list());
+}, keepAliveDuration - 5000); // Stop them 5 seconds before script ends
+
 setTimeout(() => {
   console.log('\n--- envjs Comprehensive Test Finished ---');
   // You might want to explicitly exit if the monitor or other background tasks are running indefinitely

@@ -15,5 +15,54 @@
     "array[0]": {
       "item": "nested item"
     }
+  },
+  "aliasTest": {},
+  "__dbCollections__": {
+    "users": [
+      {
+        "name": "Alice",
+        "age": 30,
+        "city": "New York",
+        "tags": [
+          "dev",
+          "js"
+        ],
+        "_id": "maiko7d8upckhwx",
+        "region": "East Coast"
+      },
+      {
+        "name": "Charlie",
+        "age": 36,
+        "city": "New York",
+        "tags": [
+          "qa",
+          "js",
+          "lead"
+        ],
+        "_id": "maiko7dbtdrygb9",
+        "region": "East Coast",
+        "status": "active"
+      },
+      {
+        "name": "Eve",
+        "age": 30,
+        "city": "Berlin",
+        "tags": [
+          "pm",
+          "js"
+        ],
+        "_id": "maiko7djphpprni"
+      },
+      {
+        "name": "Zoe",
+        "age": 28,
+        "city": "Madrid",
+        "tags": [
+          "new"
+        ],
+        "_id": "maiko7ewdsn56uk"
+      }
+    ],
+    "posts": []
   }
 }

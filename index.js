@@ -71,6 +71,17 @@ function saveStore() {
   }
 }
 
+// Helper function to parse template literals for shell commands
+function parseCommand(template, ...args) {
+    let command = template[0];
+    for (let i = 0; i < args.length; i++) {
+        // Simple escaping for arguments: wrap in quotes if they contain spaces
+        const arg = String(args[i]);
+        command += (arg.includes(' ') ? `"${arg.replace(/"/g, '\\\\"')}"` : arg) + template[i + 1];
+    }
+    return command.trim();
+}
+
 /**
  * @module envjs
  * @description Provides a simplified interface to various Node.js core modules with added utilities.
@@ -814,6 +825,27 @@ export default function envjs() {
         // No try/catch here, let it throw naturally.
         console.log(`Executing command synchronously: ${command}`);
         return child_process.execSync(command, options);
+      },
+      /**
+       * Executes a shell command using a template literal string, returning a Promise.
+       * Similar to zx.
+       * @param {string[]|string} template - The template string array (from tagged template literal) or a simple command string.
+       * @param {...any} args - Values to interpolate into the command.
+       * @returns {Promise<{ stdout: string; stderr: string; }>} A promise that resolves with stdout and stderr.
+       * @example
+       * const { stdout } = await env.$`ls -la`;
+       * const branchName = 'main';
+       * await env.$`git checkout ${branchName}`;
+       */
+      async $(template, ...args) {
+        const command = Array.isArray(template) ? parseCommand(template, ...args) : template;
+        // Check for mock first
+        if (mockedFunctions['child_process.$']) {
+            console.log(`Using mock for child_process.$ \`\${command}\``);
+            return Promise.resolve(mockedFunctions['child_process.$'](command));
+        }
+        console.log(`Executing command with $ (async): ${command}`);
+        return execAsync(command);
       }
     },
 
@@ -1408,6 +1440,51 @@ export default function envjs() {
         },
 
         /**
+         * Schedules a callback to run based on a CRON expression.
+         * Note: This is a simplified cron parser. For robust cron scheduling, a dedicated library is recommended.
+         * This basic version supports: min hour day(month) month day(week)
+         * e.g., "0 0 * * *" for daily at midnight.
+         * @param {string} cronExpression - The CRON string.
+         * @param {function} callback - The function to call.
+         * @param {string} [id] - A unique ID for this schedule. If not provided, a random one is generated.
+         * @returns {string|null} The ID of the scheduled task, or null if the expression is invalid.
+         */
+        cron(cronExpression, callback, id) {
+            const timerId = id || `cron-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+            console.log(`Scheduling task '${timerId}' with cron expression: ${cronExpression}...`); // Keep informative log
+
+            // Basic cron parsing and scheduling logic (highly simplified)
+            // This is a placeholder for a more robust cron engine.
+            // For a real implementation, you'd parse the cron string and use multiple setTimeout calls
+            // or a more sophisticated scheduling mechanism.
+            const parts = cronExpression.split(' ');
+            if (parts.length < 5 || parts.length > 6) { // cron can have 5 or 6 fields
+                console.error(`Invalid cron expression: ${cronExpression}. Must have 5 or 6 space-separated parts.`); // Keep error log
+                return null;
+            }
+
+            // This is NOT a real cron implementation. It just runs every minute for demonstration.
+            // A real implementation would need to calculate next run times based on the cron parts.
+            console.warn(`Simplified cron for '${timerId}': For demonstration, this will run the callback approximately every minute if the minute field is '*' or matches current minute. This is not a full cron parser.`);
+
+            const checkAndRun = () => {
+                const now = new Date();
+                const minuteMatch = parts[0] === '*' || parseInt(parts[0]) === now.getMinutes();
+                const hourMatch = parts[1] === '*' || parseInt(parts[1]) === now.getHours();
+                // Further checks for dayOfMonth, month, dayOfWeek would go here.
+
+                if (minuteMatch && hourMatch) { // Simplified check
+                    callback();
+                }
+            };
+
+            // Check frequently (e.g., every minute) - this is inefficient for a real cron.
+            const timer = setInterval(checkAndRun, 60000); // Check every 60 seconds
+            this._timers[timerId] = timer;
+            return timerId;
+        },
+
+        /**
          * Stops a scheduled task.
          * @param {string} id - The ID of the task to stop.
          * @returns {boolean} True if the task was found and stopped, false otherwise.
@@ -1624,6 +1701,8 @@ export default function envjs() {
   };
    // Add mock methods to the modules object so they are accessible via env.use('mock')
    modules.mock = mock;
+   // Add store as state module
+   modules.state = modules.store;
 
 
   // --- Plugin System ---
@@ -1686,6 +1765,811 @@ export default function envjs() {
    // Add loader methods to the modules object
    modules.loader = loader;
 
+  // --- Task Runner --- 
+  const tasksModule = {
+    _tasks: {},
+    define(name, fn) {
+      if (typeof name !== 'string' || !name) {
+        throw new Error('Task name must be a non-empty string.');
+      }
+      if (typeof fn !== 'function') {
+        throw new Error(`Task function for '${name}' must be a function.`);
+      }
+      this._tasks[name] = fn;
+      // console.log(`Task defined: ${name}`); // Keep this commented unless verbose logging is desired
+    },
+    async run(name, ...args) {
+      if (typeof name !== 'string' || !this._tasks[name]) {
+        throw new Error(`Task '${name}' not found or name is invalid.`);
+      }
+      console.log(`Running task: ${name}` + (args.length > 0 ? ` with args: ${args.join(', ')}` : ''));
+      try {
+        return await this._tasks[name](...args);
+      } catch (error) {
+        console.error(`Error in task '${name}':`, error.message); // Keep error log
+        // Optionally, rethrow or handle more gracefully
+        throw error; 
+      }
+    },
+    list() {
+      return Object.keys(this._tasks);
+    },
+    schedule(taskName, cronExpression, id) {
+        if (!this._tasks[taskName]) {
+            throw new Error(`Task '${taskName}' not found. Define it first with env.task().`);
+        }
+        const scheduleId = id || `task-cron-${taskName}-${Date.now()}`;
+        console.log(`Scheduling task '${taskName}' (ID: ${scheduleId}) with cron: ${cronExpression}`); // Keep informative log
+        // Use the existing scheduler module's cron method
+        return modules.scheduler.cron(cronExpression, () => this.run(taskName), scheduleId);
+    }
+  };
+  modules.task = tasksModule;
+
+  // --- File Watcher ---
+  const watcherModule = (() => {
+    const activeWatchers = new Map(); // path -> { watcher: fs.FSWatcher, userCallback: Function, options: object, debounceTimeout: NodeJS.Timeout | null }
+    let nextWatcherId = 1;
+
+    function log(message) {
+      // console.log(`[Watcher] ${message}`); // Uncomment for debugging
+    }
+
+    function closeAllWatchers() {
+        log("Closing all active file watchers.");
+        activeWatchers.forEach(({ watcher }, id) => {
+            watcher.close();
+            log(`Closed watcher ${id}`);
+        });
+        activeWatchers.clear();
+    }
+    
+    // Graceful shutdown
+    process.on('exit', closeAllWatchers);
+    // Catch Ctrl+C event and exit normally
+    process.on('SIGINT', () => {
+        log('SIGINT received, closing watchers and exiting.');
+        process.exit(0);
+    });
+     // Catch "kill pid" (for example: nodemon restart)
+    process.on('SIGTERM', () => {
+        log('SIGTERM received, closing watchers and exiting.');
+        process.exit(0);
+    });
+
+
+    function watch(pathOrPaths, optionsOrCallback, callbackOrUndefined) {
+      let userCallback;
+      let options = {};
+
+      if (typeof optionsOrCallback === 'function') {
+        userCallback = optionsOrCallback;
+      } else if (typeof optionsOrCallback === 'object' && optionsOrCallback !== null) {
+        options = optionsOrCallback;
+        if (typeof callbackOrUndefined === 'function') {
+          userCallback = callbackOrUndefined;
+        } else {
+          throw new Error('Watcher callback function is required when options are provided.');
+        }
+      } else {
+        throw new Error('Watcher requires a callback function, and optionally an options object.');
+      }
+
+      const resolvedPath = path.resolve(pathOrPaths); // Ensure absolute path
+      const watcherId = nextWatcherId++;
+
+      const mergedOptions = {
+        persistent: true,
+        recursive: false,
+        encoding: 'utf8',
+        debounce: 50, // Milliseconds for debouncing
+        filter: null, // Function (eventType, filename) => boolean
+        ...options,
+      };
+
+      log(`Starting watcher ${watcherId} for path: ${resolvedPath} with options: ${JSON.stringify(mergedOptions)}`);
+
+      let debounceTimeout = null;
+      let lastFilenames = new Set();
+
+      const fsWatcher = fs.watch(resolvedPath, mergedOptions, (eventType, filename) => {
+        log(`Event: ${eventType}, Filename: ${filename || 'N/A'} on watcher ${watcherId} for ${resolvedPath}`);
+        
+        if (!filename && (eventType === 'rename' || eventType === 'change') ) {
+            // On some platforms (e.g. Linux for recursive dir watch), filename might be null for directory changes
+            // or for the watched directory itself.
+            // We can treat this as a change on the directory itself if pathOrPaths was a dir.
+            // Or, it could be an event on a file inside a recursively watched dir where filename is not provided.
+            // For simplicity here, we might pass it through if no specific filename handling is needed.
+            log(`Event on watcher ${watcherId} for ${resolvedPath}: ${eventType} with no filename. Propagating event for the main path.`);
+             // filename = path.basename(resolvedPath); // Or handle differently
+        }
+        
+        // If a filter is provided, use it
+        if (mergedOptions.filter && typeof mergedOptions.filter === 'function') {
+          if (!mergedOptions.filter(eventType, filename)) {
+            log(`Event filtered out for ${filename || resolvedPath}`);
+            return;
+          }
+        }
+
+        if (debounceTimeout) {
+          clearTimeout(debounceTimeout);
+          if(filename) lastFilenames.add(filename);
+        } else {
+          if(filename) lastFilenames = new Set([filename]);
+          else lastFilenames.clear(); // event on the dir itself
+        }
+
+        debounceTimeout = setTimeout(() => {
+          debounceTimeout = null;
+          const currentFilenames = Array.from(lastFilenames);
+          lastFilenames.clear();
+
+          if (currentFilenames.length > 0) {
+                currentFilenames.forEach(fn => {
+                    log(`Debounced event: ${eventType} for ${fn} on watcher ${watcherId}`);
+                    userCallback(eventType, fn, resolvedPath);
+                });
+            } else {
+                // Event on the directory itself
+                log(`Debounced event: ${eventType} for watched path ${resolvedPath} on watcher ${watcherId}`);
+                userCallback(eventType, null, resolvedPath); // filename is null for the directory itself
+            }
+        }, mergedOptions.debounce);
+      });
+
+      fsWatcher.on('error', (error) => {
+        console.error(`Watcher ${watcherId} error for path ${resolvedPath}:`, error.message); // Keep error log
+        // Potentially remove from activeWatchers and notify user
+        if (activeWatchers.has(watcherId)) {
+            activeWatchers.get(watcherId).watcher.close();
+            activeWatchers.delete(watcherId);
+        }
+      });
+      
+      fsWatcher.on('close', () => {
+        log(`Watcher ${watcherId} for path ${resolvedPath} closed.`);
+        activeWatchers.delete(watcherId);
+      });
+
+      const watcherInstance = {
+        id: watcherId,
+        path: resolvedPath,
+        close: () => {
+          log(`Closing watcher ${watcherId} for ${resolvedPath} via instance.close()`);
+          fsWatcher.close();
+          activeWatchers.delete(watcherId); // Ensure it's removed here too
+        },
+      };
+
+      activeWatchers.set(watcherId, { watcher: fsWatcher, userCallback, options: mergedOptions, debounceTimeout: null, instance: watcherInstance });
+      return watcherInstance;
+    }
+
+    return {
+      watch,
+      getActiveWatchers: () => Array.from(activeWatchers.keys()),
+      getWatcherDetails: (id) => {
+        const details = activeWatchers.get(id);
+        if (!details) return null;
+        return { id, path: details.instance.path, options: details.options };
+      },
+      closeAll: closeAllWatchers
+    };
+  })();
+  modules.watcher = watcherModule;
+
+  // --- JSON Database (db) ---
+  const dbModule = (() => {
+    const DB_STORAGE_KEY = '__dbCollections__';
+
+    // Ensure DB storage is initialized in storeData
+    // This is checked and potentially initialized when envjs() is first called.
+    // And also when a collection is first accessed.
+    function initializeDbStore() {
+        if (!storeData[DB_STORAGE_KEY] || typeof storeData[DB_STORAGE_KEY] !== 'object') {
+            storeData[DB_STORAGE_KEY] = {};
+            // console.log("DB store initialized in storeData."); // Debug log
+            // No saveStore() here, will be saved on first actual write operation or if store is saved elsewhere.
+        }
+    }
+    initializeDbStore(); // Ensure it's set up when dbModule is defined
+
+    function generateId() {
+      // Using crypto for a more robust UUID if available, otherwise fallback.
+      // Node.js 14.17.0+ has crypto.randomUUID natively.
+      // For broader compatibility, especially if older Node versions without direct ESM crypto import are a concern,
+      // a simpler timestamp-based ID is safer without adding explicit crypto import at top level of envjs.
+      // Let's stick to a simple one for now to avoid crypto import complexities here.
+      return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+    }
+
+    function matchesQuery(doc, query) {
+      if (!query || typeof query !== 'object' || Object.keys(query).length === 0) return true; // Empty/invalid query matches all
+      for (const key in query) {
+        if (doc[key] !== query[key]) {
+          // Add more complex query operators here if needed (e.g., $gt, $lt, $in)
+          // For now, it's direct equality.
+          return false;
+        }
+      }
+      return true;
+    }
+
+    class Collection {
+      constructor(name) {
+        this.name = name;
+        initializeDbStore(); // Ensure main DB object exists
+        // Ensure collection array is initialized in the store
+        if (!storeData[DB_STORAGE_KEY][this.name] || !Array.isArray(storeData[DB_STORAGE_KEY][this.name])) {
+          storeData[DB_STORAGE_KEY][this.name] = [];
+          // console.log(`Collection '${this.name}' initialized in DB store.`); // Debug log
+        }
+        // This provides a direct reference to the array in storeData for in-place modifications.
+        this.documents = storeData[DB_STORAGE_KEY][this.name];
+      }
+
+      _save() {
+        saveStore(); 
+        // console.log(`DB: Collection '${this.name}' changes saved.`); // Debug log
+      }
+
+      insert(docOrArray) {
+        const toInsert = Array.isArray(docOrArray) ? docOrArray : [docOrArray];
+        const insertedItems = [];
+        let changed = false;
+        for (const doc of toInsert) {
+          if (typeof doc !== 'object' || doc === null) {
+            console.warn(`DB: Cannot insert non-object into collection '${this.name}'. Skipping:`, JSON.stringify(doc)); // Keep warning
+            continue;
+          }
+          const newDoc = { ...doc }; // Create a shallow copy
+          if (typeof newDoc._id === 'undefined') { // Allow users to provide their own _id
+            newDoc._id = generateId();
+          }
+          this.documents.push(newDoc);
+          insertedItems.push(JSON.parse(JSON.stringify(newDoc))); // Return a deep copy
+          changed = true;
+        }
+        if (changed) this._save();
+        return Array.isArray(docOrArray) ? insertedItems : (insertedItems[0] || null);
+      }
+
+      find(query = {}) {
+        // Return deep copies to prevent external modification of stored documents
+        return this.documents.filter(doc => matchesQuery(doc, query)).map(doc => JSON.parse(JSON.stringify(doc)));
+      }
+
+      findOne(query = {}) {
+        const foundDoc = this.documents.find(doc => matchesQuery(doc, query));
+        return foundDoc ? JSON.parse(JSON.stringify(foundDoc)) : null; // Return a deep copy
+      }
+
+      update(query, updateDataOrFn, options = { multi: false, upsert: false }) {
+        let updatedCount = 0;
+        const updatedResultDocs = [];
+        let docFound = false;
+
+        for (let i = this.documents.length - 1; i >= 0; i--) {
+          if (matchesQuery(this.documents[i], query)) {
+            docFound = true;
+            const originalDocCopy = JSON.parse(JSON.stringify(this.documents[i])); // Deep copy for the update function
+            let modifiedDoc;
+
+            if (typeof updateDataOrFn === 'function') {
+              modifiedDoc = updateDataOrFn(originalDocCopy); // Pass deep copy to function
+            } else {
+              // Simple field set, not a MongoDB-style update operator ($set, $inc) processor yet
+              modifiedDoc = { ...originalDocCopy, ...updateDataOrFn }; 
+            }
+            
+            // Ensure _id is not lost if the updateDataOrFn accidentally removes it
+            if (originalDocCopy._id && (typeof modifiedDoc._id === 'undefined' || modifiedDoc._id !== originalDocCopy._id)) {
+                modifiedDoc._id = originalDocCopy._id;
+            }
+
+            this.documents[i] = modifiedDoc; // Update in place
+            updatedResultDocs.push(JSON.parse(JSON.stringify(modifiedDoc)));
+            updatedCount++;
+            if (!options.multi) break; 
+          }
+        }
+
+        if (!docFound && options.upsert) {
+            let newDoc = {};
+            if (typeof updateDataOrFn === 'function') {
+                // If it's an upsert and the update is a function, it's tricky.
+                // We'll assume the query forms the base, and the function might add to it.
+                // This part might need more sophisticated handling for complex $operator style updates.
+                console.warn(`DB: Upsert with a function on '${this.name}'. Query forms base, function modifies. Review if result is as expected.`); // Keep warning
+                const baseForFunc = { ...query }; 
+                newDoc = updateDataOrFn(baseForFunc);
+                // Merge query fields into the doc returned by function, if not already there
+                for(const qKey in query) {
+                    if(typeof newDoc[qKey] === 'undefined') newDoc[qKey] = query[qKey];
+                }
+            } else {
+                newDoc = { ...query, ...updateDataOrFn }; 
+            }
+            if (typeof newDoc._id === 'undefined') newDoc._id = generateId();
+            
+            this.documents.push(newDoc);
+            updatedResultDocs.push(JSON.parse(JSON.stringify(newDoc)));
+            updatedCount++;
+        }
+
+        if (updatedCount > 0) this._save();
+        return { updatedCount, updatedDocs: updatedResultDocs };
+      }
+
+      remove(query, options = { multi: false }) {
+        let removedCount = 0;
+        for (let i = this.documents.length - 1; i >= 0; i--) {
+          if (matchesQuery(this.documents[i], query)) {
+            this.documents.splice(i, 1); // Remove in place
+            removedCount++;
+            if (!options.multi) break;
+          }
+        }
+        if (removedCount > 0) this._save();
+        return { removedCount };
+      }
+
+      count(query = {}) {
+        if (!query || typeof query !== 'object' || Object.keys(query).length === 0) return this.documents.length;
+        return this.documents.filter(doc => matchesQuery(doc, query)).length;
+      }
+
+      clear() {
+        const numRemoved = this.documents.length;
+        if (numRemoved > 0) {
+          this.documents.length = 0; // Clear the array in place
+          this._save();
+        }
+        return { numRemoved };
+      }
+    }
+
+    const collectionsCache = new Map();
+
+    function getCollection(name) {
+      if (typeof name !== 'string' || !name.trim()) {
+        throw new Error('DB: Collection name must be a non-empty string.');
+      }
+      // Convert to a consistent case, e.g., lowercase, to avoid duplicate collections with different casing
+      const collectionName = name.trim().toLowerCase(); 
+      if (!collectionsCache.has(collectionName)) {
+        // console.log(`DB: Creating new collection instance for '${collectionName}'`); // Debug log
+        collectionsCache.set(collectionName, new Collection(collectionName));
+      }
+      return collectionsCache.get(collectionName);
+    }
+
+    return {
+      collection: getCollection,
+      _inspectRawDB: () => JSON.parse(JSON.stringify(storeData[DB_STORAGE_KEY]))
+    };
+  })();
+  modules.db = dbModule;
+
+  // --- CLI Creator ---
+  const cliModule = (() => {
+    const commands = {};
+    let defaultCommand = null;
+    let appName = path.basename(process.argv[1] || 'app');
+    let appDescription = 'A CLI application built with envjs.';
+    let parsedArgsCache = null; // To store parsed args after first parse
+
+    function setAppInfo({ name, description }){
+        if(name) appName = name;
+        if(description) appDescription = description;
+    }
+
+    // Basic argument parser (can be expanded)
+    // Simplified: assumes options like --option value or --flag
+    // And commands are the first non-option argument
+    function parseArguments(argv = process.argv.slice(2)) {
+        if (parsedArgsCache) return parsedArgsCache; 
+
+        const args = [];
+        const options = {};
+        let commandName = null;
+        let potentialCommand = true;
+
+        for (let i = 0; i < argv.length; i++) {
+            const arg = argv[i];
+            if (arg.startsWith('--')) {
+                const longArg = arg.slice(2);
+                if (argv[i + 1] !== undefined && !argv[i + 1].startsWith('-')) {
+                    options[longArg] = argv[i + 1];
+                    i++; // Skip next value
+                } else {
+                    options[longArg] = true; // Flag
+                }
+                potentialCommand = false; // An option has been encountered
+            } else if (arg.startsWith('-')) { // Short alias, e.g., -v
+                // Basic alias handling: assumes each char after - is a flag unless specified otherwise by command config
+                // More complex alias mapping (e.g. -o file) would require command-specific config during parsing
+                const shortArgs = arg.slice(1);
+                for (const char of shortArgs) {
+                    options[char] = true; // Treat as flag for now
+                }
+                potentialCommand = false;
+            } else {
+                if (potentialCommand && commandName === null && commands[arg]) {
+                    commandName = arg;
+                    potentialCommand = false; // Command found
+                } else {
+                    args.push(arg);
+                }
+            }
+        }
+        parsedArgsCache = { commandName, args, options };
+        return parsedArgsCache;
+    }
+
+    function command(name, descriptionOrConfig, configOrHandler, handlerFn) {
+      let cmdName, cmdDescription, cmdConfig, cmdHandler;
+
+      if (typeof name !== 'string') throw new Error('Command name must be a string.');
+      cmdName = name;
+
+      if (typeof descriptionOrConfig === 'string') {
+        cmdDescription = descriptionOrConfig;
+        if (typeof configOrHandler === 'object' && configOrHandler !== null) {
+          cmdConfig = configOrHandler;
+          cmdHandler = handlerFn;
+        } else if (typeof configOrHandler === 'function') {
+          cmdConfig = {}; // No specific config
+          cmdHandler = configOrHandler;
+        }
+      } else if (typeof descriptionOrConfig === 'object' && descriptionOrConfig !== null) {
+        cmdDescription = descriptionOrConfig.description || '';
+        cmdConfig = descriptionOrConfig;
+        cmdHandler = configOrHandler; // handlerFn will be undefined here
+      } else if (typeof descriptionOrConfig === 'function') {
+        cmdDescription = '';
+        cmdConfig = {};
+        cmdHandler = descriptionOrConfig;
+      }
+
+      if (typeof cmdHandler !== 'function') throw new Error(`Handler for command '${cmdName}' must be a function.`);
+      if (commands[cmdName]) throw new Error(`Command '${cmdName}' already defined.`);
+
+      commands[cmdName] = {
+        name: cmdName,
+        description: cmdDescription,
+        config: cmdConfig || { options: {}, args: [] },
+        handler: cmdHandler,
+      };
+      // console.log(`CLI: Command defined: ${cmdName}`);
+    }
+
+    function setDefault(handler) {
+        if (typeof handler !== 'function') {
+            throw new Error('Default command handler must be a function.');
+        }
+        defaultCommand = { handler, name: '[default]', description: 'Default action', config: {} };
+    }
+
+    function generateHelpMessage(commandName) {
+        let message = `Usage: ${appName}${commandName ? ' ' + commandName : ' [command]'} [options] [arguments]\n\n`;
+        message += `${appDescription}\n\n`;
+
+        if (commandName && commands[commandName]) {
+            const cmd = commands[commandName];
+            message += `Command: ${cmd.name}\n`;
+            if (cmd.description) message += `  ${cmd.description}\n`;
+            // TODO: Add detailed help for command-specific args and options from cmd.config
+
+        } else {
+            message += 'Available commands:\n';
+            for (const name in commands) {
+                message += `  ${name}`;
+                if (commands[name].description) {
+                    message += `\t - ${commands[name].description}`;
+                }
+                message += '\n';
+            }
+            if (defaultCommand && defaultCommand.description) {
+                 message += `  [default]\t - ${defaultCommand.description}\n`;
+            }
+            message += '\nRun `appName command --help` for more information on a specific command.\n'; 
+        }
+        console.log(message);
+    }
+
+    async function run(argv = process.argv.slice(2)) {
+        const { commandName, args, options } = parseArguments(argv);
+
+        if (options.help || options.h) {
+            return generateHelpMessage(commandName);
+        }
+
+        const commandToRun = commandName ? commands[commandName] : defaultCommand;
+
+        if (commandToRun) {
+            try {
+                // Simple arg/option mapping for now. Could be enhanced by command config.
+                // e.g. map alias, validate types, check required based on cmd.config.options and cmd.config.args
+                const cmdArgs = { ...options }; // Start with options
+                // Assign positional args based on definition in cmd.config.args (if defined)
+                if (commandToRun.config && commandToRun.config.args && Array.isArray(commandToRun.config.args)){
+                    commandToRun.config.args.forEach((argDef, index) => {
+                        if(args[index] !== undefined) {
+                            cmdArgs[argDef.name] = args[index];
+                        } else if (argDef.required) {
+                            throw new Error(`Missing required argument '${argDef.name}' for command '${commandToRun.name}'.`);
+                        }
+                    });
+                } else {
+                    // If no formal arg definition, pass positional args as an array
+                    if(args.length > 0) cmdArgs._ = args; 
+                }
+                
+                await commandToRun.handler(cmdArgs, options, args); // Pass parsed options and raw args array
+            } catch (error) {
+                console.error(`Error executing command '${commandToRun.name}':`, error.message); // Keep error log
+                // Optionally, generate help on error: generateHelpMessage(commandToRun.name);
+                process.exitCode = 1; // Indicate error
+            }
+        } else {
+            if (commandName) {
+                console.error(`Error: Command '${commandName}' not found.`); // Keep error log
+            } else {
+                console.log('No command specified and no default command set.');
+            }
+            generateHelpMessage();
+            process.exitCode = 1;
+        }
+    }
+    
+    // Automatically run if commands are defined and script is executed directly?
+    // This can be tricky. For now, require explicit env.cli.run()
+    // Or, a convention could be: if(import.meta.url === `file://${process.argv[1]}`) { run(); }
+
+    return {
+      setAppInfo,
+      command,
+      default: setDefault,
+      parse: parseArguments, // Expose parser if needed externally
+      run,
+      _commands: () => commands // For inspection/testing
+    };
+  })();
+  modules.cli = cliModule;
+
+  // --- Zero-Config Web Server ---
+  const serverModule = (() => {
+    let serverInstance = null;
+    const routes = []; // { method: string, pathPattern: RegExp, paramNames: string[], handler: Function }
+    const middlewares = []; // { path: string | null, handler: Function }
+    let isListening = false;
+
+    // Helper to parse request body
+    async function parseBody(req) {
+      return new Promise((resolve, reject) => {
+        const contentType = req.headers['content-type'] || '';
+        let body = '';
+        req.on('data', chunk => body += chunk.toString());
+        req.on('end', () => {
+          try {
+            if (contentType.includes('application/json')) {
+              resolve(JSON.parse(body || '{}'));
+            } else if (contentType.includes('application/x-www-form-urlencoded')) {
+              resolve(querystring.parse(body)); // Using querystring module from envjs
+            } else {
+              resolve(body); // Plain text or other
+            }
+          } catch (error) {
+            console.warn('Server: Error parsing request body:', error.message); // Keep warning
+            resolve({}); // Resolve with empty object on parsing error
+          }
+        });
+        req.on('error', reject);
+      });
+    }
+
+    // Helper to convert path string to RegExp and extract param names
+    function pathToRegExp(pathString) {
+        const paramNames = [];
+        const pattern = pathString.replace(/\/:(\w+)/g, (_, paramName) => {
+            paramNames.push(paramName);
+            return '([^\\/]+)'; // Capture group for parameter values
+        });
+        return { pathPattern: new RegExp(`^${pattern}$`), paramNames };
+    }
+
+    function addRoute(method, pathString, handler) {
+        if (typeof handler !== 'function') {
+            throw new Error('Route handler must be a function.');
+        }
+        const { pathPattern, paramNames } = pathToRegExp(pathString);
+        routes.push({ method: method.toUpperCase(), pathPattern, paramNames, handler });
+        // console.log(`Server: Route added - ${method.toUpperCase()} ${pathString}`);
+    }
+
+    function use(pathOrHandler, handlerFnOrUndefined) {
+        let path = '/'; // Default path for middleware is all paths
+        let handler;
+
+        if (typeof pathOrHandler === 'function') {
+            handler = pathOrHandler;
+        } else if (typeof pathOrHandler === 'string' && typeof handlerFnOrUndefined === 'function') {
+            path = pathOrHandler;
+            handler = handlerFnOrUndefined;
+        } else {
+            throw new Error('Invalid arguments for server.use(). Provide a handler or path and handler.');
+        }
+        middlewares.push({ path, handler });
+        // console.log(`Server: Middleware added for path ${path}`);
+    }
+
+    const requestListener = async (req, res) => {
+        // Augment req and res
+        req.query = urlParse(req.url, true).query; // Using url.parse from envjs
+        req.params = {}; // Will be populated by router
+
+        res.status = (code) => {
+            res.statusCode = code;
+            return res;
+        };
+        res.send = (data) => {
+            if (data === undefined || data === null) {
+                res.end();
+                return;
+            }
+            if (typeof data === 'object' && !Buffer.isBuffer(data)) {
+                 // If it's an object but not a buffer, default to JSON
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify(data));
+            } else {
+                if (!res.getHeader('Content-Type')) {
+                    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                }
+                res.end(data);
+            }
+        };
+        res.json = (jsonData) => {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(jsonData));
+        };
+
+        // Handle request body parsing early if needed for all routes or middleware
+        // For methods that typically have bodies
+        if (['POST', 'PUT', 'PATCH'].includes(req.method.toUpperCase())) {
+            req.body = await parseBody(req).catch(err => {
+                console.error('Server: Failed to parse body before routing:', err.message); // Keep error
+                req.body = {}; // Ensure req.body exists
+            }); 
+        } else {
+            req.body = {};
+        }
+
+        let middlewareIndex = 0;
+        async function next(error) {
+            if (error) {
+                console.error('Server: Error in middleware chain:', error); // Keep error log
+                res.status(500).send('Internal Server Error');
+                return;
+            }
+            if (middlewareIndex < middlewares.length) {
+                const { path: mwPath, handler: mwHandler } = middlewares[middlewareIndex++];
+                // Check if middleware path matches request path
+                if (req.url.startsWith(mwPath)) { 
+                    try {
+                        await mwHandler(req, res, next);
+                    } catch (err) {
+                        next(err); // Pass error to next error handler or default handler
+                    }
+                } else {
+                    next(); // Path doesn't match, skip to next middleware
+                }
+            } else {
+                // All middleware processed, try to match a route
+                for (const route of routes) {
+                    if (route.method === req.method) {
+                        const match = route.pathPattern.exec(urlParse(req.url).pathname);
+                        if (match) {
+                            route.paramNames.forEach((name, index) => {
+                                req.params[name] = match[index + 1];
+                            });
+                            try {
+                                return await route.handler(req, res);
+                            } catch (routeError) {
+                                console.error('Server: Error in route handler:', routeError.message, routeError.stack); // Keep error log
+                                if (!res.writableEnded) {
+                                    res.status(500).send('Internal Server Error');
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+                // No route matched
+                if (!res.writableEnded) {
+                    res.status(404).send('Not Found');
+                }
+            }
+        }
+        await next(); // Start middleware chain
+    };
+
+    function listen(port, hostOrCallback, callbackOrUndefined) {
+        if (isListening && serverInstance) {
+            console.warn('Server is already listening. Close it first or use a different instance.'); // Keep warning
+            if (typeof hostOrCallback === 'function') hostOrCallback(new Error('Server already listening'));
+            else if (typeof callbackOrUndefined === 'function') callbackOrUndefined(new Error('Server already listening'));
+            return serverInstance;
+        }
+
+        let portNum = port || process.env.PORT || 3000;
+        let hostName = 'localhost';
+        let cb = () => {};
+
+        if (typeof hostOrCallback === 'string') {
+            hostName = hostOrCallback;
+            if (typeof callbackOrUndefined === 'function') cb = callbackOrUndefined;
+        } else if (typeof hostOrCallback === 'function') {
+            cb = hostOrCallback;
+        }
+
+        serverInstance = http.createServer(requestListener);
+        serverInstance.on('error', (err) => {
+            console.error('Server error:', err.message); // Keep error log
+            isListening = false;
+        });
+
+        return new Promise((resolve, reject) => {
+            serverInstance.listen(portNum, hostName, () => {
+                isListening = true;
+                const address = serverInstance.address();
+                const listenHost = address.address;
+                const listenPort = address.port;
+                console.log(`Server listening on http://${listenHost}:${listenPort}`); // Keep info log
+                if (cb) cb();
+                resolve(serverInstance);
+            }).on('error', (err) => { // Catch listen-specific errors like EADDRINUSE
+                 isListening = false;
+                 console.error(`Server failed to listen on ${hostName}:${portNum}:`, err.message); // Keep error log
+                 if (cb) cb(err); // Pass error to callback if provided
+                 reject(err);
+            });
+        });
+    }
+
+    function close() {
+        return new Promise((resolve, reject) => {
+            if (serverInstance && isListening) {
+                serverInstance.close((err) => {
+                    if (err) {
+                        console.error('Error closing server:', err.message); // Keep error log
+                        reject(err);
+                        return;
+                    }
+                    isListening = false;
+                    serverInstance = null;
+                    console.log('Server closed.'); // Keep info log
+                    resolve();
+                });
+            } else {
+                // console.log('Server is not listening or instance is null.');
+                resolve(); // Resolve if not listening
+            }
+        });
+    }
+
+    // Define HTTP method helpers
+    const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
+    const serverApi = { listen, close, use, route: addRoute };
+    methods.forEach(method => {
+        serverApi[method] = (pathString, handler) => addRoute(method, pathString, handler);
+    });
+
+    return serverApi;
+  })();
+  modules.server = serverModule;
 
   // Initialize the monitor after all modules are defined
   if (modules.monitor && !modules.monitor._monitoring) {
@@ -1779,6 +2663,108 @@ export default function envjs() {
      */
     register(name, moduleContent) {
         return modules.plugin.register(name, moduleContent);
-    }
+    },
+    /**
+     * Executes a shell command asynchronously using a template literal.
+     * This is a convenience alias for `env.use('child_process').$()`.
+     * @param {string[]|string} template - The template string array or command string.
+     * @param {...any} args - Values to interpolate.
+     * @returns {Promise<{ stdout: string; stderr: string; }>} stdout and stderr.
+     * @example
+     * await env.$`npm install`;
+     */
+    async $(template, ...args) {
+        return modules.child_process.$(template, ...args);
+    },
+    /**
+     * Schedules a callback based on a CRON expression.
+     * This is a convenience alias for `env.use('scheduler').cron()`.
+     * @param {string} cronExpression - The CRON string.
+     * @param {function} callback - The function to call.
+     * @param {string} [id] - Optional unique ID for the schedule.
+     * @returns {string|null} The ID of the scheduled task.
+     * @example
+     * env.schedule('0 0 * * *', () => console.log('Daily cron job run!'));
+     */
+    schedule(cronExpression, callback, id) {
+        return modules.scheduler.cron(cronExpression, callback, id);
+    },
+    /**
+     * Access the persistent JSON storage.
+     * This is a direct alias to `env.use('store')` (or `env.use('state')`).
+     * @example
+     * env.state.set('myKey', { data: 'value' });
+     * console.log(env.state.get('myKey'));
+     */
+    state: modules.state, // or modules.store, as modules.state is an alias
+
+    /**
+     * Defines a task.
+     * @param {string} name - The name of the task.
+     * @param {function} fn - The asynchronous function to execute for the task.
+     * @example
+     * env.task('build', async () => { console.log('Building...'); });
+     */
+    task(name, fn) {
+        return modules.task.define(name, fn);
+    },
+
+    /**
+     * Accesses the task runner module for running, listing, or scheduling tasks.
+     * @example
+     * await env.tasks.run('build');
+     * console.log(env.tasks.list());
+     * env.tasks.schedule('nightly-backup', '0 0 * * *'); // Assumes 'nightly-backup' task is defined
+     */
+    tasks: modules.task,
+    /**
+     * Watches files or directories for changes.
+     * This is a convenience alias for `env.use('watcher').watch()`.
+     * @param {string} pathOrPaths - The file or directory path to watch.
+     * @param {object|function} [optionsOrCallback] - Optional options object or the callback function.
+     * @param {function} [callbackOrUndefined] - The callback function if options were provided.
+     * @returns {object} A watcher instance with a `close()` method.
+     * @example
+     * const watcher = env.watch('./src', { recursive: true, debounce: 100 }, (eventType, filename) => {
+     *   console.log(`File changed: ${eventType} on ${filename}`);
+     * });
+     * // To stop watching: watcher.close();
+     */
+    watch: modules.watcher.watch,
+    /**
+     * Accesses the watcher module for managing file watchers (e.g., closeAll).
+     * @example
+     * env.watcher.closeAll(); // Stops all active watchers created by env.watch()
+     * console.log(env.watcher.getActiveWatchers());
+     */
+    watcher: modules.watcher,
+    /**
+     * Accesses the JSON Database module.
+     * This is a convenience alias for `env.use('db')`.
+     * @example
+     * const users = env.db.collection('users');
+     * users.insert({ name: 'Alice', age: 30 });
+     * const alice = users.findOne({ name: 'Alice' });
+     */
+    db: modules.db,
+    /**
+     * Accesses the CLI creator module.
+     * This is a convenience alias for `env.use('cli')`.
+     * @example
+     * env.cli.command('hello', 'Prints a greeting', (args) => {
+     *   console.log(`Hello, ${args.name || 'world'}!`);
+     * });
+     * env.cli.run();
+     */
+    cli: modules.cli,
+    /**
+     * Accesses the Zero-Config Web Server module.
+     * This is a convenience alias for `env.use('server')`.
+     * @example
+     * const app = env.server;
+     * app.get('/', (req, res) => res.send('Hello World!'));
+     * app.listen(3000);
+     */
+    server: modules.server
   };
 }

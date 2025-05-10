@@ -1,9 +1,13 @@
 {
   "name": "envjsc",
-  "version": "1.1.4",
+  "version": "1.1.46",
   "description": "EnvJS, A modern, low-level Node.js environment toolkit for filesystem, HTTP, and core utilities.",
   "main": "index.js",
   "type": "module",
+  "bin": {
+    "envjs-tool": "./test-cli.js",
+    "envjs": "./test-cli.js"
+  },
   "scripts": {
     "test": "node test.js"
   },
