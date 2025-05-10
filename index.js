@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import http from "http";
+import https from "https"; // Import https for fetch support
 import os from "os";
 import { fileURLToPath } from "url";
 import child_process from "child_process";
@@ -14,143 +15,344 @@ import { parse as urlParse, format as urlFormat, URL as NodeURL } from "url"; //
 import querystring from "querystring";
 import events from "events";
 
+// Promisify core Node.js async functions
+const readFileAsync = util.promisify(fs.readFile);
+const writeFileAsync = util.promisify(fs.writeFile);
+const readdirAsync = util.promisify(fs.readdir);
+const mkdirAsync = util.promisify(fs.mkdir);
+const unlinkAsync = util.promisify(fs.unlink);
+const rmdirAsync = util.promisify(fs.rmdir);
+const renameAsync = util.promisify(fs.rename);
+const statAsync = util.promisify(fs.stat);
+const execAsync = util.promisify(child_process.exec);
+const gzipAsync = util.promisify(zlib.gzip);
+const gunzipAsync = util.promisify(zlib.gunzip);
+const deflateAsync = util.promisify(zlib.deflate);
+const inflateAsync = util.promisify(zlib.inflate);
+const dnsLookupAsync = util.promisify(dns.lookup);
+const dnsResolveAsync = util.promisify(dns.resolve);
+
+
 // Emulate __dirname in ESM for the module itself
 const __filenameInternal = fileURLToPath(import.meta.url);
 const __dirnameInternal = path.dirname(__filenameInternal);
 
+// Internal state for mocking
+const originalModules = {};
+const mockedFunctions = {};
+
+// Internal state for store
+const storeFilePath = path.join(process.cwd(), '.envjs-store.json');
+let storeData = {};
+
+// Load store data on initialization
+try {
+  if (fs.existsSync(storeFilePath)) {
+    const rawData = fs.readFileSync(storeFilePath, 'utf8');
+    storeData = JSON.parse(rawData);
+    // console.log("envjs store loaded successfully."); // Removed default success log
+  } else {
+    // Initialize with empty object if file doesn't exist
+    fs.writeFileSync(storeFilePath, JSON.stringify({}), 'utf8');
+    // console.log("envjs store file created."); // Removed default success log
+  }
+} catch (err) {
+  console.error("Error loading envjs store:", err.message); // Keep error log
+  storeData = {}; // Reset to empty on error
+}
+
+// Helper to save store data
+function saveStore() {
+  try {
+    fs.writeFileSync(storeFilePath, JSON.stringify(storeData, null, 2), 'utf8');
+    // console.log("envjs store saved."); // Removed default success log
+  } catch (err) {
+    console.error("Error saving envjs store:", err.message); // Keep error log
+  }
+}
+
 /**
  * @module envjs
- * @description Provides a simplified interface to various Node.js core modules.
+ * @description Provides a simplified interface to various Node.js core modules with added utilities.
  */
 export default function envjs() {
   const modules = {
     /**
      * @memberof envjs
      * @namespace file
-     * @description File system operations.
+     * @description File system operations (synchronous and asynchronous).
      */
     file: {
       /**
-       * Reads a file.
+       * Reads a file synchronously.
        * @param {string} filename - The path to the file.
        * @param {string} [encoding="utf8"] - The file encoding.
-       * @returns {string|null} The file content or null on error.
+       * @returns {string} The file content.
+       * @throws {Error} If the file cannot be read.
        */
-      readFile(filename, encoding = "utf8") {
-        try {
-          const content = fs.readFileSync(path.resolve(filename), encoding);
-          console.log("File content read successfully.");
-          return content;
-        } catch (err) {
-          console.error("Read error:", err.message);
-          return null;
+      readFileSync(filename, encoding = "utf8") {
+        // Check for mock first
+        if (mockedFunctions['file.readFileSync']) {
+            console.log(`Using mock for file.readFileSync('${filename}')`);
+            return mockedFunctions['file.readFileSync'](filename, encoding);
         }
+        // No try/catch here, let it throw naturally so the caller can handle it.
+        const content = fs.readFileSync(path.resolve(filename), encoding);
+        return content;
       },
       /**
-       * Writes data to a file.
+       * Reads a file asynchronously.
+       * @param {string} filename - The path to the file.
+       * @param {string} [encoding="utf8"] - The file encoding.
+       * @returns {Promise<string>} A promise that resolves with the file content.
+       */
+      readFile(filename, encoding = "utf8") {
+         // Check for mock first
+        if (mockedFunctions['file.readFile']) {
+            console.log(`Using mock for file.readFile('${filename}')`);
+            return Promise.resolve(mockedFunctions['file.readFile'](filename, encoding));
+        }
+        return readFileAsync(path.resolve(filename), encoding);
+      },
+      /**
+       * Writes data to a file synchronously.
        * @param {string} filename - The path to the file.
        * @param {string|Buffer} data - The data to write.
        * @param {string} [encoding="utf8"] - The file encoding.
+       * @throws {Error} If the file cannot be written.
        */
-      writeFile(filename, data, encoding = "utf8") {
-        try {
-          fs.writeFileSync(path.resolve(filename), data, encoding);
-          console.log("File written successfully.");
-        } catch (err) {
-          console.error("Write error:", err.message);
+      writeFileSync(filename, data, encoding = "utf8") {
+         // Check for mock first
+        if (mockedFunctions['file.writeFileSync']) {
+            console.log(`Using mock for file.writeFileSync('${filename}')`);
+            return mockedFunctions['file.writeFileSync'](filename, data, encoding);
         }
+        // No try/catch here, let it throw naturally.
+        fs.writeFileSync(path.resolve(filename), data, encoding);
       },
       /**
-       * Checks if a file exists.
+       * Writes data to a file asynchronously.
+       * @param {string} filename - The path to the file.
+       * @param {string|Buffer} data - The data to write.
+       * @param {string} [encoding="utf8"] - The file encoding.
+       * @returns {Promise<void>} A promise that resolves when the file is written.
+       */
+      writeFile(filename, data, encoding = "utf8") {
+         // Check for mock first
+        if (mockedFunctions['file.writeFile']) {
+            console.log(`Using mock for file.writeFile('${filename}')`);
+            return Promise.resolve(mockedFunctions['file.writeFile'](filename, data, encoding));
+        }
+        return writeFileAsync(path.resolve(filename), data, encoding);
+      },
+      /**
+       * Checks if a file exists synchronously.
        * @param {string} filename - The path to the file.
        * @returns {boolean} True if the file exists, false otherwise.
        */
-      exists(filename) {
+      existsSync(filename) {
+         // Check for mock first
+        if (mockedFunctions['file.existsSync']) {
+            console.log(`Using mock for file.existsSync('${filename}')`);
+            return mockedFunctions['file.existsSync'](filename);
+        }
         return fs.existsSync(path.resolve(filename));
       },
+       /**
+       * Checks if a file exists asynchronously.
+       * Note: Using `fs.access` is generally preferred over `fs.exists` as it avoids race conditions.
+       * This function resolves with true if the file exists and is accessible, false otherwise.
+       * @param {string} filename - The path to the file.
+       * @param {number} [mode=fs.constants.F_OK] - The mode to check (e.g., fs.constants.R_OK for readable).
+       * @returns {Promise<boolean>} A promise that resolves with true if the file exists and is accessible, false otherwise.
+       */
+      exists(filename, mode = fs.constants.F_OK) {
+         // Check for mock first
+        if (mockedFunctions['file.exists']) {
+            console.log(`Using mock for file.exists('${filename}')`);
+            return Promise.resolve(mockedFunctions['file.exists'](filename, mode));
+        }
+        return new Promise((resolve) => {
+            fs.access(path.resolve(filename), mode, (err) => {
+                resolve(!err);
+            });
+        });
+      },
       /**
-       * Reads the content of a directory.
+       * Reads the content of a directory synchronously.
        * @param {string} dirPath - The path to the directory.
        * @param {object} [options={ encoding: "utf8", withFileTypes: false }] - Options for reading the directory.
-       * @returns {string[]|fs.Dirent[]|null} An array of filenames or Dirent objects, or null on error.
+       * @returns {string[]|fs.Dirent[]} An array of filenames or Dirent objects.
+       * @throws {Error} If the directory cannot be read.
+       */
+      readDirSync(dirPath, options = { encoding: "utf8", withFileTypes: false }) {
+         // Check for mock first
+        if (mockedFunctions['file.readDirSync']) {
+            console.log(`Using mock for file.readDirSync('${dirPath}')`);
+            return mockedFunctions['file.readDirSync'](dirPath, options);
+        }
+        // No try/catch here, let it throw naturally.
+        const files = fs.readdirSync(path.resolve(dirPath), options);
+        return files;
+      },
+      /**
+       * Reads the content of a directory asynchronously.
+       * @param {string} dirPath - The path to the directory.
+       * @param {object} [options={ encoding: "utf8", withFileTypes: false }] - Options for reading the directory.
+       * @returns {Promise<string[]|fs.Dirent[]>} A promise that resolves with an array of filenames or Dirent objects.
        */
       readDir(dirPath, options = { encoding: "utf8", withFileTypes: false }) {
-        try {
-          const files = fs.readdirSync(path.resolve(dirPath), options);
-          console.log("Directory read successfully.");
-          return files;
-        } catch (err) {
-          console.error("Read directory error:", err.message);
-          return null;
+         // Check for mock first
+        if (mockedFunctions['file.readDir']) {
+            console.log(`Using mock for file.readDir('${dirPath}')`);
+            return Promise.resolve(mockedFunctions['file.readDir'](dirPath, options));
         }
+        return readdirAsync(path.resolve(dirPath), options);
       },
       /**
-       * Creates a directory.
+       * Creates a directory synchronously.
        * @param {string} dirPath - The path to the directory to create.
        * @param {object} [options={ recursive: false }] - Options for creating the directory.
-       * @returns {string|undefined|null} The first directory path created if recursive, undefined otherwise, or null on error.
+       * @returns {string|undefined} The first directory path created if recursive, undefined otherwise.
+       * @throws {Error} If the directory cannot be created.
+       */
+      makeDirSync(dirPath, options = { recursive: false }) {
+         // Check for mock first
+        if (mockedFunctions['file.makeDirSync']) {
+            console.log(`Using mock for file.makeDirSync('${dirPath}')`);
+            return mockedFunctions['file.makeDirSync'](dirPath, options);
+        }
+        // No try/catch here, let it throw naturally.
+        const result = fs.mkdirSync(path.resolve(dirPath), options);
+        return result;
+      },
+      /**
+       * Creates a directory asynchronously.
+       * @param {string} dirPath - The path to the directory to create.
+       * @param {object} [options={ recursive: false }] - Options for creating the directory.
+       * @returns {Promise<string|undefined>} A promise that resolves with the first directory path created if recursive, undefined otherwise.
        */
       makeDir(dirPath, options = { recursive: false }) {
-        try {
-          const result = fs.mkdirSync(path.resolve(dirPath), options);
-          console.log("Directory created successfully.");
-          return result;
-        } catch (err) {
-          console.error("Make directory error:", err.message);
-          return null;
+         // Check for mock first
+        if (mockedFunctions['file.makeDir']) {
+            console.log(`Using mock for file.makeDir('${dirPath}')`);
+            return Promise.resolve(mockedFunctions['file.makeDir'](dirPath, options));
         }
+        return mkdirAsync(path.resolve(dirPath), options);
       },
        /**
-       * Deletes a file.
+       * Deletes a file synchronously.
        * @param {string} filePath - The path to the file.
+       * @throws {Error} If the file cannot be deleted.
+       */
+      deleteFileSync(filePath) {
+        // Check for mock first
+        if (mockedFunctions['file.deleteFileSync']) {
+            console.log(`Using mock for file.deleteFileSync('${filePath}')`);
+            return mockedFunctions['file.deleteFileSync'](filePath);
+        }
+        // No try/catch here, let it throw naturally.
+        fs.unlinkSync(path.resolve(filePath));
+      },
+       /**
+       * Deletes a file asynchronously.
+       * @param {string} filePath - The path to the file.
+       * @returns {Promise<void>} A promise that resolves when the file is deleted.
        */
       deleteFile(filePath) {
-        try {
-          fs.unlinkSync(path.resolve(filePath));
-          console.log("File deleted successfully.");
-        } catch (err) {
-          console.error("Delete file error:", err.message);
+        // Check for mock first
+        if (mockedFunctions['file.deleteFile']) {
+            console.log(`Using mock for file.deleteFile('${filePath}')`);
+            return Promise.resolve(mockedFunctions['file.deleteFile'](filePath));
         }
+        return unlinkAsync(path.resolve(filePath));
       },
       /**
-       * Removes a directory.
+       * Removes a directory synchronously.
        * @param {string} dirPath - The path to the directory.
        * @param {object} [options={ recursive: false }] - Options for removing the directory.
+       * @throws {Error} If the directory cannot be removed.
+       */
+      removeDirSync(dirPath, options = { recursive: false }) {
+         // Check for mock first
+        if (mockedFunctions['file.removeDirSync']) {
+            console.log(`Using mock for file.removeDirSync('${dirPath}')`);
+            return mockedFunctions['file.removeDirSync'](dirPath, options);
+        }
+        // No try/catch here, let it throw naturally.
+        fs.rmdirSync(path.resolve(dirPath), options);
+      },
+       /**
+       * Removes a directory asynchronously.
+       * @param {string} dirPath - The path to the directory.
+       * @param {object} [options={ recursive: false }] - Options for removing the directory.
+       * @returns {Promise<void>} A promise that resolves when the directory is removed.
        */
       removeDir(dirPath, options = { recursive: false }) {
-        try {
-          fs.rmdirSync(path.resolve(dirPath), options);
-          console.log("Directory removed successfully.");
-        } catch (err) {
-          console.error("Remove directory error:", err.message);
+         // Check for mock first
+        if (mockedFunctions['file.removeDir']) {
+            console.log(`Using mock for file.removeDir('${dirPath}')`);
+            return Promise.resolve(mockedFunctions['file.removeDir'](dirPath, options));
         }
+        return rmdirAsync(path.resolve(dirPath), options);
       },
       /**
-       * Renames a file or directory.
+       * Renames a file or directory synchronously.
        * @param {string} oldPath - The current path.
        * @param {string} newPath - The new path.
+       * @throws {Error} If the file or directory cannot be renamed.
        */
-      rename(oldPath, newPath) {
-        try {
-          fs.renameSync(path.resolve(oldPath), path.resolve(newPath));
-          console.log("Renamed successfully.");
-        } catch (err) {
-          console.error("Rename error:", err.message);
+      renameSync(oldPath, newPath) {
+        // Check for mock first
+        if (mockedFunctions['file.renameSync']) {
+            console.log(`Using mock for file.renameSync('${oldPath}', '${newPath}')`);
+            return mockedFunctions['file.renameSync'](oldPath, newPath);
         }
+        // No try/catch here, let it throw naturally.
+        fs.renameSync(path.resolve(oldPath), path.resolve(newPath));
       },
       /**
-       * Gets file status.
+       * Renames a file or directory asynchronously.
+       * @param {string} oldPath - The current path.
+       * @param {string} newPath - The new path.
+       * @returns {Promise<void>} A promise that resolves when the file or directory is renamed.
+       */
+      rename(oldPath, newPath) {
+        // Check for mock first
+        if (mockedFunctions['file.rename']) {
+            console.log(`Using mock for file.rename('${oldPath}', '${newPath}')`);
+            return Promise.resolve(mockedFunctions['file.rename'](oldPath, newPath));
+        }
+        return renameAsync(path.resolve(oldPath), path.resolve(newPath));
+      },
+      /**
+       * Gets file status synchronously.
        * @param {string} filePath - The path to the file.
-       * @returns {fs.Stats|null} File status object or null on error.
+       * @returns {fs.Stats} File status object.
+       * @throws {Error} If the file status cannot be retrieved.
+       */
+      statSync(filePath) {
+         // Check for mock first
+        if (mockedFunctions['file.statSync']) {
+            console.log(`Using mock for file.statSync('${filePath}')`);
+            return mockedFunctions['file.statSync'](filePath);
+        }
+        // No try/catch here, let it throw naturally.
+        const stats = fs.statSync(path.resolve(filePath));
+        return stats;
+      },
+      /**
+       * Gets file status asynchronously.
+       * @param {string} filePath - The path to the file.
+       * @returns {Promise<fs.Stats>} A promise that resolves with the file status object.
        */
       stat(filePath) {
-        try {
-          const stats = fs.statSync(path.resolve(filePath));
-          return stats;
-        } catch (err) {
-          console.error("Stat error:", err.message);
-          return null;
+         // Check for mock first
+        if (mockedFunctions['file.stat']) {
+            console.log(`Using mock for file.stat('${filePath}')`);
+            return Promise.resolve(mockedFunctions['file.stat'](filePath));
         }
+        return statAsync(path.resolve(filePath));
       }
     },
 
@@ -160,22 +362,50 @@ export default function envjs() {
      * @description HTTP server and client functionality.
      */
     http: {
+      // Internal state for CORS
+      _corsEnabled: false,
+
+      /**
+       * Enables simple CORS headers for the HTTP server.
+       */
+      enableCORS() {
+          this._corsEnabled = true;
+          console.log("CORS enabled for HTTP server.");
+      },
+
       /**
        * Creates an HTTP server.
        * @param {function} callback - Request listener.
        * @returns {http.Server} The HTTP server instance.
        */
       createServer(callback) {
-        const server = http.createServer(callback);
+        const self = this; // Capture 'this' to access _corsEnabled
+        const server = http.createServer((req, res) => {
+          if (self._corsEnabled) {
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+            // Handle CORS preflight requests
+            if (req.method === 'OPTIONS') {
+              res.writeHead(204);
+              res.end();
+              return; // Stop further processing for OPTIONS
+            }
+          }
+          // Pass the request to the original callback
+          callback(req, res);
+        });
+
         // Listen on a default port or make it configurable
         const port = process.env.PORT || 3000;
         server.listen(port, () => {
           console.log(`HTTP server running on http://localhost:${port}`);
         });
+        // No try/catch here, let listen errors propagate
         return server;
       },
       /**
-       * Makes an HTTP GET request.
+       * Makes an HTTP GET request (Node.js native style).
        * @param {string|URL} url - The URL to request.
        * @param {object} [options={}] - Request options.
        * @param {function} [callback] - Callback with the response (res, data, err).
@@ -187,6 +417,8 @@ export default function envjs() {
           options = {};
         }
         console.log(`Making GET request to: ${url}`);
+        // Error handling is done via the 'error' event on the request object,
+        // which is passed to the callback. This is standard Node.js behavior.
         return http.get(url, options, (res) => {
           let data = '';
           res.setEncoding('utf8'); // Ensure string data
@@ -196,8 +428,83 @@ export default function envjs() {
             if (callback) callback(res, data, null);
           });
         }).on('error', (err) => {
-          console.error("HTTP GET error:", err.message);
+          console.error("HTTP GET error:", err.message); // Keep error log
           if (callback) callback(null, null, err); // Pass error to callback
+        });
+      },
+      /**
+       * Makes an HTTP request with a fetch-like interface.
+       * @param {string|URL|Request} url - The URL or Request object.
+       * @param {object} [options={}] - Request options (method, headers, body, etc.).
+       * @returns {Promise<Response>} A promise that resolves with the Response object.
+       */
+      fetch(url, options = {}) {
+         // Check for mock first
+        if (mockedFunctions['http.fetch']) {
+            console.log(`Using mock for http.fetch('${url}')`);
+            return Promise.resolve(mockedFunctions['http.fetch'](url, options));
+        }
+
+        return new Promise((resolve, reject) => {
+          const parsedUrl = new NodeURL(url);
+          const protocol = parsedUrl.protocol === 'https:' ? https : http;
+
+          const reqOptions = {
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port,
+            path: parsedUrl.pathname + parsedUrl.search,
+            method: options.method || 'GET',
+            headers: options.headers || {},
+          };
+
+          const req = protocol.request(reqOptions, (res) => {
+            let data = '';
+            res.setEncoding('utf8'); // Assume text response for simplicity
+
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
+
+            res.on('end', () => {
+              // Simulate a basic Response object
+              const response = {
+                ok: res.statusCode >= 200 && res.statusCode < 300,
+                status: res.statusCode,
+                statusText: res.statusMessage,
+                headers: res.headers,
+                // Method to get body as text
+                text: () => Promise.resolve(data),
+                // Method to get body as JSON
+                json: () => {
+                  try {
+                    return Promise.resolve(JSON.parse(data));
+                  } catch (e) {
+                    // Reject the promise if JSON parsing fails
+                    return Promise.reject(new Error('Failed to parse JSON response: ' + e.message));
+                  }
+                },
+                // Add other methods like blob(), arrayBuffer() if needed
+              };
+              resolve(response);
+            });
+          });
+
+          req.on('error', (err) => {
+            // Reject the promise on request error
+            console.error("HTTP fetch request error:", err.message); // Keep error log
+            reject(err);
+          });
+
+          // Write request body if present
+          if (options.body) {
+            // Ensure body is a string or Buffer
+            const body = typeof options.body !== 'string' && !Buffer.isBuffer(options.body)
+                         ? JSON.stringify(options.body) // Assume JSON if not string/buffer
+                         : options.body;
+            req.write(body);
+          }
+
+          req.end();
         });
       }
     },
@@ -212,21 +519,21 @@ export default function envjs() {
        * Gets current user information.
        * @returns {os.UserInfo<string>} User information.
        */
-      currentUserData() {
+      userInfo() { // Renamed to match Node.js API
         return os.userInfo();
       },
       /**
        * Gets free system memory in bytes.
        * @returns {number} Free memory.
        */
-      freeMem() {
+      freemem() { // Renamed to match Node.js API
         return os.freemem();
       },
       /**
        * Gets total system memory in bytes.
        * @returns {number} Total memory.
        */
-      totalMem() {
+      totalmem() { // Renamed to match Node.js API
         return os.totalmem();
       },
       /**
@@ -270,6 +577,13 @@ export default function envjs() {
        */
       uptime() {
         return os.uptime();
+      },
+      /**
+       * Gets the average system load over the last 1, 5, and 15 minutes.
+       * @returns {number[]} An array containing the 1, 5, and 15 minute load averages.
+       */
+      loadavg() {
+        return os.loadavg();
       }
     },
 
@@ -411,16 +725,18 @@ export default function envjs() {
        * @param {string} command - The command to run.
        * @param {string[]} [args=[]] - List of string arguments.
        * @param {object} [options={}] - Options for spawning the process.
-       * @returns {child_process.ChildProcess|null} The spawned child process or null on error.
+       * @returns {child_process.ChildProcess} The spawned child process.
+       * @throws {Error} If the process cannot be spawned (e.g., command not found).
        */
       spawn(command, args = [], options = {}) {
-        try {
-          console.log(`Spawning command: ${command} ${args.join(' ')}`);
-          return child_process.spawn(command, args, options);
-        } catch (err) {
-          console.error("Spawn error:", err.message);
-          return null;
+        // Check for mock first
+        if (mockedFunctions['child_process.spawn']) {
+            console.log(`Using mock for child_process.spawn('${command}')`);
+            return mockedFunctions['child_process.spawn'](command, args, options);
         }
+        // No try/catch here, let it throw naturally.
+        console.log(`Spawning command: ${command} ${args.join(' ')}`);
+        return child_process.spawn(command, args, options);
       },
       /**
        * Spawns a shell and executes a command within that shell.
@@ -434,41 +750,70 @@ export default function envjs() {
           callback = options;
           options = {};
         }
+        // Check for mock first
+        if (mockedFunctions['child_process.exec']) {
+             console.log(`Using mock for child_process.exec('${command}')`);
+             // Mocked exec should ideally call the callback
+             const mockResult = mockedFunctions['child_process.exec'](command, options);
+             if (callback && mockResult) {
+                  // Assuming mockResult is { error, stdout, stderr }
+                  callback(mockResult.error, mockResult.stdout, mockResult.stderr);
+             }
+              // Return a dummy object that might resemble ChildProcess if needed by the caller,
+              // but for simple mocks, just calling the callback might be enough.
+             return { pid: -1, stdout: null, stderr: null, on: () => {} }; // Dummy object
+        }
         console.log(`Executing command: ${command}`);
+        // Error handling is done via the callback, which is standard Node.js behavior.
         return child_process.exec(command, options, (error, stdout, stderr) => {
           if (error) {
-            console.error(`Exec error: ${error.message}`);
+            console.error(`Exec error: ${error.message}`); // Keep error log
             // It's good practice to still call the callback with the error
             if (callback) callback(error, stdout, stderr);
             return;
           }
           if (stderr) {
             // stderr doesn't always mean an error in execution, could be warnings
-            console.warn(`Exec stderr: ${stderr}`);
+            console.warn(`Exec stderr: ${stderr}`); // Keep warning log
           }
           if (stdout) {
-            console.log(`Exec stdout: ${stdout}`);
+            // console.log(`Exec stdout: ${stdout}`); // Removed success log
           }
           if (callback) callback(null, stdout, stderr);
         });
+      },
+       /**
+       * Spawns a shell and executes a command within that shell, returning a Promise.
+       * @param {string} command - The command to run.
+       * @param {object} [options={}] - Options for exec.
+       * @returns {Promise<{ stdout: string; stderr: string; }>} A promise that resolves with stdout and stderr.
+       */
+      execAsync(command, options = {}) {
+         // Check for mock first
+        if (mockedFunctions['child_process.execAsync']) {
+            console.log(`Using mock for child_process.execAsync('${command}')`);
+            return Promise.resolve(mockedFunctions['child_process.execAsync'](command, options));
+        }
+        console.log(`Executing command asynchronously: ${command}`);
+        // Promisified exec will reject on error, which is good.
+        return execAsync(command, options);
       },
       /**
        * Synchronously spawns a shell and executes a command.
        * @param {string} command - The command to run.
        * @param {object} [options={}] - Options for execSync.
-       * @returns {Buffer|string|null} The stdout from the command, or null on error.
+       * @returns {Buffer|string} The stdout from the command.
+       * @throws {Error} If the command fails, the error object will contain stdout and stderr properties.
        */
       execSync(command, options = {}) {
-        try {
-          console.log(`Executing command synchronously: ${command}`);
-          return child_process.execSync(command, options);
-        } catch (err) {
-          console.error("ExecSync error:", err.message);
-          // err.stdout might contain partial output, err.stderr contains error output
-          if (err.stderr) console.error("ExecSync stderr:", err.stderr.toString());
-          if (err.stdout) console.log("ExecSync stdout (on error):", err.stdout.toString());
-          return null; // Indicate failure more clearly
+        // Check for mock first
+        if (mockedFunctions['child_process.execSync']) {
+            console.log(`Using mock for child_process.execSync('${command}')`);
+            return mockedFunctions['child_process.execSync'](command, options);
         }
+        // No try/catch here, let it throw naturally.
+        console.log(`Executing command synchronously: ${command}`);
+        return child_process.execSync(command, options);
       }
     },
 
@@ -496,8 +841,8 @@ export default function envjs() {
       },
       /**
        * Creates and returns an Hmac object.
-       * @param {string} algorithm - The algorithm to use.
        * @param {string|Buffer|crypto.KeyObject} key - The HMAC key.
+       * @param {string} algorithm - The algorithm to use.
        * @returns {crypto.Hmac} The Hmac object.
        */
       createHmac(algorithm, key) {
@@ -508,24 +853,50 @@ export default function envjs() {
     /**
      * @memberof envjs
      * @namespace dns
-     * @description DNS lookup functionality.
+     * @description DNS lookup functionality (callback and Promise-based).
      */
     dns: {
       /**
-       * Resolves a hostname (e.g., 'google.com') into the first found A (IPv4) or AAAA (IPv6) record.
+       * Resolves a hostname (e.g., 'google.com') into the first found A (IPv4) or AAAA (IPv6) record using callbacks.
        * @param {string} hostname - The hostname to resolve.
        * @param {function} callback - Callback with (err, address, family).
        */
       lookup(hostname, callback) {
+        // Check for mock first
+        if (mockedFunctions['dns.lookup']) {
+             console.log(`Using mock for dns.lookup('${hostname}')`);
+             // Mocked lookup should ideally call the callback
+             const mockResult = mockedFunctions['dns.lookup'](hostname);
+             if (callback && mockResult) {
+                  // Assuming mockResult is { err, address, family }
+                  callback(mockResult.err, mockResult.address, mockResult.family);
+             }
+             return; // Mock handled the call
+        }
         console.log(`Looking up DNS for: ${hostname}`);
+        // Error handling is via the callback, standard Node.js.
         dns.lookup(hostname, (err, address, family) => {
-          if (err) console.error("DNS lookup error:", err.message);
-          else console.log(`DNS lookup result: ${address} (Family: IPv${family})`);
+          if (err) console.error("DNS lookup error:", err.message); // Keep error log
+          // else console.log(`DNS lookup result: ${address} (Family: IPv${family})`); // Removed success log
           if (callback) callback(err, address, family);
         });
       },
+       /**
+       * Resolves a hostname (e.g., 'google.com') into the first found A (IPv4) or AAAA (IPv6) record using Promises.
+       * @param {string} hostname - The hostname to resolve.
+       * @returns {Promise<{ address: string; family: number; }>} A promise that resolves with the address and family.
+       */
+      lookupAsync(hostname) {
+         // Check for mock first
+        if (mockedFunctions['dns.lookupAsync']) {
+            console.log(`Using mock for dns.lookupAsync('${hostname}')`);
+            return Promise.resolve(mockedFunctions['dns.lookupAsync'](hostname));
+        }
+        console.log(`Looking up DNS asynchronously for: ${hostname}`);
+        return dnsLookupAsync(hostname);
+      },
       /**
-       * Resolves a hostname into an array of record types specified by rrtype.
+       * Resolves a hostname into an array of record types specified by rrtype using callbacks.
        * @param {string} hostname - The hostname to resolve.
        * @param {string} [rrtype="A"] - Resource record type (e.g., 'A', 'AAAA', 'MX', 'TXT').
        * @param {function} callback - Callback with (err, records).
@@ -535,12 +906,39 @@ export default function envjs() {
           callback = rrtype;
           rrtype = 'A';
         }
+         // Check for mock first
+        if (mockedFunctions['dns.resolve']) {
+             console.log(`Using mock for dns.resolve('${hostname}', '${rrtype}')`);
+             // Mocked resolve should ideally call the callback
+             const mockResult = mockedFunctions['dns.resolve'](hostname, rrtype);
+             if (callback && mockResult) {
+                  // Assuming mockResult is { err, records }
+                  callback(mockResult.err, mockResult.records);
+             }
+             return; // Mock handled the call
+        }
         console.log(`Resolving DNS ${rrtype} records for: ${hostname}`);
+        // Error handling is via the callback, standard Node.js.
         dns.resolve(hostname, rrtype, (err, records) => {
-          if (err) console.error(`DNS resolve (${rrtype}) error:`, err.message);
-          else console.log(`DNS resolve (${rrtype}) result:`, records);
+          if (err) console.error(`DNS resolve (${rrtype}) error:`, err.message); // Keep error log
+          // else console.log(`DNS resolve (${rrtype}) result:`, records); // Removed success log
           if (callback) callback(err, records);
         });
+      },
+      /**
+       * Resolves a hostname into an array of record types specified by rrtype using Promises.
+       * @param {string} hostname - The hostname to resolve.
+       * @param {string} [rrtype="A"] - Resource record type (e.g., 'A', 'AAAA', 'MX', 'TXT').
+       * @returns {Promise<string[]|dns.MxRecord[]|dns.NaptrRecord[]|dns.SoaRecord|dns.SrvRecord[]|string[][]>} A promise that resolves with the records.
+       */
+      resolveAsync(hostname, rrtype = "A") {
+         // Check for mock first
+        if (mockedFunctions['dns.resolveAsync']) {
+            console.log(`Using mock for dns.resolveAsync('${hostname}', '${rrtype}')`);
+            return Promise.resolve(mockedFunctions['dns.resolveAsync'](hostname, rrtype));
+        }
+        console.log(`Resolving DNS ${rrtype} records asynchronously for: ${hostname}`);
+        return dnsResolveAsync(hostname, rrtype);
       }
     },
 
@@ -564,7 +962,8 @@ export default function envjs() {
         console.log("Creating net server...");
         const server = net.createServer(options, connectionListener);
         server.on('listening', () => console.log('Net server listening.'));
-        server.on('error', (err) => console.error('Net server error:', err.message));
+        server.on('error', (err) => console.error('Net server error:', err.message)); // Keep error log
+        // No try/catch here, let errors propagate via the 'error' event.
         return server;
       },
       /**
@@ -577,7 +976,8 @@ export default function envjs() {
         console.log("Creating net connection with options:", options);
         const socket = net.createConnection(options, connectListener);
         socket.on('connect', () => console.log('Net connection established.'));
-        socket.on('error', (err) => console.error('Net connection error:', err.message));
+        socket.on('error', (err) => console.error('Net connection error:', err.message)); // Keep error log
+         // No try/catch here, let errors propagate via the 'error' event.
         return socket;
       }
     },
@@ -594,22 +994,33 @@ export default function envjs() {
         pipeline: util.promisify(stream.pipeline), // Promisified version
         finished: util.promisify(stream.finished), // Promisified version
          /**
-         * A utility function for piping streams and handling errors.
+         * A utility function for piping streams and handling errors using a callback.
          * @param {stream.Readable} source - The source readable stream.
          * @param {stream.Writable} destination - The destination writable stream.
          * @param {function} callback - Called when piping is complete or an error occurs.
          */
         pipe(source, destination, callback) {
             console.log("Piping streams...");
+            // Error handling is via the callback, standard Node.js pipeline.
             stream.pipeline(source, destination, (err) => {
                 if (err) {
-                    console.error('Pipeline failed.', err);
+                    console.error('Pipeline failed.', err); // Keep error log
                     if (callback) callback(err);
                 } else {
-                    console.log('Pipeline succeeded.');
+                    // console.log('Pipeline succeeded.'); // Removed success log
                     if (callback) callback(null);
                 }
             });
+        },
+         /**
+         * A utility function for piping streams and handling errors using Promises.
+         * @param {...(stream.Readable|stream.Writable|stream.Duplex|stream.Transform)} streams - The streams to pipe.
+         * @returns {Promise<void>} A promise that resolves when the pipeline is finished.
+         */
+        pipelineAsync(...streams) {
+             console.log("Piping streams asynchronously...");
+             // Promisified pipeline will reject on error.
+             return util.promisify(stream.pipeline)(...streams);
         }
     },
 
@@ -631,11 +1042,11 @@ export default function envjs() {
        * Inherits the prototype methods from one constructor into another.
        * @param {function} constructor - The child constructor.
        * @param {function} superConstructor - The parent constructor.
-       * @deprecated Node.js recommends using ES6 classes and `extends` instead.
+       * @deprecated Node.js recommends using ES6 classes and extends instead.
        */
       inherits(constructor, superConstructor) {
         util.inherits(constructor, superConstructor);
-        console.log(`${constructor.name} now inherits from ${superConstructor.name} (using util.inherits)`);
+        console.log(`${constructor.name} now inherits from ${superConstructor.name} (using util.inherits)`); // Keep this log as it's informative about the action
       },
       /**
        * Returns a string representation of an object, useful for debugging.
@@ -668,60 +1079,100 @@ export default function envjs() {
     /**
      * @memberof envjs
      * @namespace zlib
-     * @description Compression and decompression functionality.
+     * @description Compression and decompression functionality (callback and Promise-based).
      */
     zlib: {
       /**
-       * Compresses data using gzip.
+       * Compresses data using gzip with a callback.
        * @param {Buffer|string} input - The data to compress.
        * @param {function} callback - Callback with (error, result).
        */
       gzip(input, callback) {
         console.log("Gzipping data...");
+        // Error handling is via the callback, standard Node.js.
         zlib.gzip(input, (err, result) => {
-          if (err) console.error("Gzip error:", err.message);
-          else console.log("Gzip successful.");
+          if (err) console.error("Gzip error:", err.message); // Keep error log
+          // else console.log("Gzip successful."); // Removed success log
           if (callback) callback(err, result);
         });
       },
+       /**
+       * Compresses data using gzip, returning a Promise.
+       * @param {Buffer|string} input - The data to compress.
+       * @returns {Promise<Buffer>} A promise that resolves with the compressed data.
+       */
+      gzipAsync(input) {
+         console.log("Gzipping data asynchronously...");
+         return gzipAsync(input);
+      },
       /**
-       * Decompresses gzip data.
+       * Decompresses gzip data with a callback.
        * @param {Buffer|string} input - The data to decompress.
        * @param {function} callback - Callback with (error, result).
        */
       gunzip(input, callback) {
         console.log("Gunzipping data...");
+         // Error handling is via the callback, standard Node.js.
         zlib.gunzip(input, (err, result) => {
-          if (err) console.error("Gunzip error:", err.message);
-          else console.log("Gunzip successful.");
+          if (err) console.error("Gunzip error:", err.message); // Keep error log
+          // else console.log("Gunzip successful."); // Removed success log
           if (callback) callback(err, result);
         });
       },
+       /**
+       * Decompresses gzip data, returning a Promise.
+       * @param {Buffer|string} input - The data to decompress.
+       * @returns {Promise<Buffer>} A promise that resolves with the decompressed data.
+       */
+      gunzipAsync(input) {
+         console.log("Gunzipping data asynchronously...");
+         return gunzipAsync(input);
+      },
       /**
-       * Compresses data using deflate.
+       * Compresses data using deflate with a callback.
        * @param {Buffer|string} input - The data to compress.
        * @param {function} callback - Callback with (error, result).
        */
       deflate(input, callback) {
         console.log("Deflating data...");
+         // Error handling is via the callback, standard Node.js.
         zlib.deflate(input, (err, result) => {
-          if (err) console.error("Deflate error:", err.message);
-          else console.log("Deflate successful.");
+          if (err) console.error("Deflate error:", err.message); // Keep error log
+          // else console.log("Deflate successful."); // Removed success log
           if (callback) callback(err, result);
         });
       },
+       /**
+       * Compresses data using deflate, returning a Promise.
+       * @param {Buffer|string} input - The data to compress.
+       * @returns {Promise<Buffer>} A promise that resolves with the compressed data.
+       */
+      deflateAsync(input) {
+         console.log("Deflating data asynchronously...");
+         return deflateAsync(input);
+      },
       /**
-       * Decompresses deflate data.
+       * Decompresses deflate data with a callback.
        * @param {Buffer|string} input - The data to decompress.
        * @param {function} callback - Callback with (error, result).
        */
       inflate(input, callback) {
         console.log("Inflating data...");
+         // Error handling is via the callback, standard Node.js.
         zlib.inflate(input, (err, result) => {
-          if (err) console.error("Inflate error:", err.message);
-          else console.log("Inflate successful.");
+          if (err) console.error("Inflate error:", err.message); // Keep error log
+          // else console.log("Inflate successful."); // Removed success log
           if (callback) callback(err, result);
         });
+      },
+       /**
+       * Decompresses deflate data, returning a Promise.
+       * @param {Buffer|string} input - The data to decompress.
+       * @returns {Promise<Buffer>} A promise that resolves with the decompressed data.
+       */
+      inflateAsync(input) {
+         console.log("Inflating data asynchronously...");
+         return inflateAsync(input);
       }
     },
 
@@ -735,7 +1186,7 @@ export default function envjs() {
        * Parses a URL string into an object (legacy API).
        * @param {string} urlString - The URL string to parse.
        * @param {boolean} [parseQueryString=false] - If true, the query property will always be set to an object.
-       * @param {boolean} [slashesDenoteHost=false] - If true, `//foo/bar` will be parsed as `{ host: 'foo', pathname: '/bar' }`.
+       * @param {boolean} [slashesDenoteHost=false] - If true, //foo/bar will be parsed as { host: 'foo', pathname: '/bar' }.
        * @returns {object} The parsed URL object.
        */
       parse(urlString, parseQueryString = false, slashesDenoteHost = false) {
@@ -754,7 +1205,7 @@ export default function envjs() {
        * @param {string} from - The base URL.
        * @param {string} to - The target URL.
        * @returns {string} The resolved URL.
-       * @deprecated Use `new URL(to, from).href` with the WHATWG URL API.
+       * @deprecated Use new URL(to, from).href with the WHATWG URL API.
        */
       resolve(from, to) {
         return new NodeURL(to, from).href;
@@ -770,7 +1221,7 @@ export default function envjs() {
      * @memberof envjs
      * @namespace querystring
      * @description Utilities for parsing and formatting URL query strings.
-     * @deprecated Node.js recommends using `URLSearchParams` from the WHATWG URL API.
+     * @deprecated Node.js recommends using URLSearchParams from the WHATWG URL API.
      */
     querystring: {
       /**
@@ -815,9 +1266,432 @@ export default function envjs() {
       createEmitter() {
         return new events.EventEmitter();
       }
+    },
+
+    /**
+     * @memberof envjs
+     * @namespace store
+     * @description A simple JSON-based persistent storage.
+     */
+    store: {
+        /**
+         * Gets a value from the store using dot notation.
+         * @param {string} keyPath - The key path (e.g., "users.0.name").
+         * @param {any} [defaultValue] - The value to return if the key path is not found.
+         * @returns {any} The value at the key path or the default value.
+         */
+        get(keyPath, defaultValue) {
+            const keys = keyPath.split('.');
+            let current = storeData;
+            for (const key of keys) {
+                if (current === null || typeof current !== 'object' || !(key in current)) {
+                    return defaultValue;
+                }
+                current = current[key];
+            }
+            return current;
+        },
+        /**
+         * Sets a value in the store using dot notation. Creates nested objects if they don't exist.
+         * @param {string} keyPath - The key path (e.g., "users.0.name").
+         * @param {any} value - The value to set.
+         */
+        set(keyPath, value) {
+            const keys = keyPath.split('.');
+            let current = storeData;
+            for (let i = 0; i < keys.length - 1; i++) {
+                const key = keys[i];
+                if (current === null || typeof current !== 'object') {
+                     console.error(`Cannot set value: Intermediate path '${keys.slice(0, i + 1).join('.')}' is not an object.`); // Keep error log
+                     return; // Cannot set if path is not an object
+                }
+                if (!(key in current) || typeof current[key] !== 'object' || current[key] === null) {
+                    // Create an object if it doesn't exist or is not an object
+                    current[key] = {};
+                }
+                current = current[key];
+            }
+            const lastKey = keys[keys.length - 1];
+             if (current !== null && typeof current === 'object') {
+                current[lastKey] = value;
+                saveStore(); // Save after setting
+             } else {
+                 console.error(`Cannot set value: Parent path '${keys.slice(0, -1).join('.')}' is not an object.`); // Keep error log
+             }
+        },
+        /**
+         * Deletes a value from the store using dot notation.
+         * @param {string} keyPath - The key path (e.g., "users.0").
+         */
+        delete(keyPath) {
+            const keys = keyPath.split('.');
+            let current = storeData;
+            for (let i = 0; i < keys.length - 1; i++) {
+                const key = keys[i];
+                 if (current === null || typeof current !== 'object' || !(key in current)) {
+                    console.warn(`Delete failed: Path '${keyPath}' not found.`); // Keep warning log
+                    return; // Path does not exist
+                }
+                current = current[key];
+            }
+            const lastKey = keys[keys.length - 1];
+             if (current !== null && typeof current === 'object' && lastKey in current) {
+                delete current[lastKey];
+                saveStore(); // Save after deleting
+             } else {
+                 console.warn(`Delete failed: Key '${lastKey}' not found at path '${keys.slice(0, -1).join('.')}'.`); // Keep warning log
+             }
+        },
+        /**
+         * Gets the entire store data.
+         * @returns {object} The entire store object.
+         */
+        all() {
+            // Return a deep copy to prevent external modification
+            return JSON.parse(JSON.stringify(storeData));
+        }
+    },
+
+    /**
+     * @memberof envjs
+     * @namespace scheduler
+     * @description A simple scheduler using setInterval and setTimeout.
+     */
+    scheduler: {
+        _timers: {}, // Store interval timers
+
+        /**
+         * Schedules a callback to run repeatedly at a specified interval.
+         * @param {string|number} interval - The interval. Can be a number of milliseconds or a string like "5s", "1m", "1h".
+         * @param {function} callback - The function to call.
+         * @param {string} [id] - A unique ID for this schedule. If not provided, a random one is generated.
+         * @returns {string|null} The ID of the scheduled task, or null if the interval is invalid.
+         */
+        every(interval, callback, id) {
+            const timerId = id || `every-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+            const intervalMs = typeof interval === 'string' ? this._parseInterval(interval) : interval;
+
+            if (isNaN(intervalMs) || intervalMs <= 0) {
+                console.error(`Invalid interval specified for scheduler: ${interval}`); // Keep error log
+                return null;
+            }
+
+            console.log(`Scheduling task '${timerId}' to run every ${interval}...`); // Keep informative log
+            const timer = setInterval(callback, intervalMs);
+            this._timers[timerId] = timer;
+            return timerId;
+        },
+
+         /**
+         * Schedules a callback to run once after a specified delay.
+         * @param {string|number} delay - The delay. Can be a number of milliseconds or a string like "5s", "1m", "1h".
+         * @param {function} callback - The function to call.
+         * @param {string} [id] - A unique ID for this schedule. If not provided, a random one is generated.
+         * @returns {string|null} The ID of the scheduled task, or null if the delay is invalid.
+         */
+        once(delay, callback, id) {
+            const timerId = id || `once-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+            const delayMs = typeof delay === 'string' ? this._parseInterval(delay) : delay;
+
+             if (isNaN(delayMs) || delayMs < 0) {
+                console.error(`Invalid delay specified for scheduler: ${delay}`); // Keep error log
+                return null;
+            }
+
+            console.log(`Scheduling task '${timerId}' to run once after ${delay}...`); // Keep informative log
+            const timer = setTimeout(() => {
+                callback();
+                delete this._timers[timerId]; // Clean up after execution
+            }, delayMs);
+            this._timers[timerId] = timer;
+            return timerId;
+        },
+
+        /**
+         * Stops a scheduled task.
+         * @param {string} id - The ID of the task to stop.
+         * @returns {boolean} True if the task was found and stopped, false otherwise.
+         */
+        stop(id) {
+            if (this._timers[id]) {
+                console.log(`Stopping scheduled task '${id}'.`); // Keep informative log
+                // Check if it's an interval or timeout
+                if (this._timers[id]._repeat) { // Heuristic to check if it's an interval
+                     clearInterval(this._timers[id]);
+                } else {
+                     clearTimeout(this._timers[id]);
+                }
+                delete this._timers[id];
+                return true;
+            }
+            console.warn(`Scheduled task '${id}' not found.`); // Keep warning log
+            return false;
+        },
+
+        /**
+         * Lists all currently scheduled task IDs.
+         * @returns {string[]} An array of scheduled task IDs.
+         */
+        list() {
+            return Object.keys(this._timers);
+        },
+
+        /**
+         * Parses an interval string (e.g., "5s", "1m", "1h") into milliseconds.
+         * @private
+         * @param {string} intervalString - The interval string.
+         * @returns {number} The interval in milliseconds, or NaN if invalid.
+         */
+        _parseInterval(intervalString) {
+            const value = parseInt(intervalString, 10);
+            if (isNaN(value)) return NaN;
+
+            const unit = intervalString.replace(value, '').toLowerCase();
+            switch (unit) {
+                case 'ms': return value;
+                case 's': return value * 1000;
+                case 'm': return value * 1000 * 60;
+                case 'h': return value * 1000 * 60 * 60;
+                case 'd': return value * 1000 * 60 * 60 * 24;
+                default: return NaN; // Unknown unit
+            }
+        }
+    },
+
+    /**
+     * @memberof envjs
+     * @namespace monitor
+     * @description Monitors system statistics and emits events.
+     */
+    monitor: new events.EventEmitter(), // Monitor is an EventEmitter instance directly
+
+    // Initialize monitor functionality
+    _initMonitor: function() {
+        const monitorInterval = 5000; // Poll every 5 seconds
+
+        // Prevent multiple initializations if envjs() is called multiple times
+        if (this.monitor._monitoring) {
+            return;
+        }
+        this.monitor._monitoring = true; // Mark as initialized
+
+        console.log(`Starting system monitor, polling every ${monitorInterval}ms.`); // Keep informative log
+
+        setInterval(() => {
+            try {
+                const memory = process.memoryUsage();
+                this.monitor.emit('memory', memory);
+                // console.log('Monitor: Memory emitted', memory); // Debugging
+
+                const freeMem = os.freemem();
+                const totalMem = os.totalmem();
+                this.monitor.emit('freemem', freeMem);
+                this.monitor.emit('totalmem', totalMem);
+                this.monitor.emit('memusage', { free: freeMem, total: totalMem, percent: (totalMem - freeMem) / totalMem });
+                 // console.log('Monitor: Mem stats emitted', { free: freeMem, total: totalMem }); // Debugging
+
+                const cpus = os.cpus();
+                this.monitor.emit('cpus', cpus);
+                 // console.log('Monitor: CPUs emitted', cpus.length); // Debugging
+
+                const loadavg = os.loadavg();
+                this.monitor.emit('loadavg', loadavg);
+                 // console.log('Monitor: Loadavg emitted', loadavg); // Debugging
+
+                const uptime = os.uptime();
+                this.monitor.emit('uptime', uptime);
+                 // console.log('Monitor: Uptime emitted', uptime); // Debugging
+
+            } catch (err) {
+                console.error("Error in system monitor:", err.message); // Keep error log
+                this.monitor.emit('error', err);
+            }
+        }, monitorInterval).unref(); // Allow Node.js to exit even if this timer is active
     }
-    // Add more modules here
+    // Note: _initMonitor is called below after modules are defined
   };
+
+  // --- Mocking System ---
+  /**
+   * @memberof envjs
+   * @namespace mock
+   * @description Provides functionality to mock envjs module functions for testing.
+   */
+  const mock = {
+      /**
+       * Mocks a specific function within an envjs module.
+       * @param {string} keyPath - The dot-separated path to the function (e.g., "file.readFile", "http.fetch").
+       * @param {function} mockFn - The function to use as a mock.
+       * @throws {Error} If the module or function does not exist.
+       */
+      mock(keyPath, mockFn) {
+          const parts = keyPath.split('.');
+          if (parts.length !== 2) {
+              throw new Error(`Invalid keyPath for mock: "${keyPath}". Must be in the format "module.function".`);
+          }
+          const moduleName = parts[0];
+          const functionName = parts[1];
+
+          const module = modules[moduleName];
+          if (!module) {
+              throw new Error(`Module "${moduleName}" not found for mocking.`);
+          }
+          const originalFn = module[functionName];
+          if (typeof originalFn !== 'function') {
+               throw new Error(`Function "${functionName}" not found or is not a function in module "${moduleName}" for mocking.`);
+          }
+
+          // Store the original function if not already stored
+          if (!originalModules[keyPath]) {
+              originalModules[keyPath] = originalFn;
+          }
+
+          // Replace the original function with the mock
+          module[functionName] = mockFn;
+          mockedFunctions[keyPath] = mockFn; // Store the mock function for lookup
+
+          console.log(`Mocked function: ${keyPath}`); // Keep informative log
+      },
+      /**
+       * Restores a mocked function to its original implementation.
+       * If no keyPath is provided, all mocked functions are restored.
+       * @param {string} [keyPath] - The dot-separated path to the function to restore (e.g., "file.readFile").
+       * @throws {Error} If the keyPath is invalid or the function was not mocked.
+       */
+      restore(keyPath) {
+          if (keyPath) {
+              const parts = keyPath.split('.');
+              if (parts.length !== 2) {
+                   throw new Error(`Invalid keyPath for restore: "${keyPath}". Must be in the format "module.function".`);
+              }
+              const moduleName = parts[0];
+              const functionName = parts[1];
+
+              const module = modules[moduleName];
+               if (!module) {
+                  throw new Error(`Module "${moduleName}" not found for restoring.`);
+              }
+
+              const originalFn = originalModules[keyPath];
+              if (!originalFn) {
+                  // Check if it was ever mocked
+                  if (mockedFunctions[keyPath]) {
+                       // It was mocked, but originalModules wasn't populated? Should not happen with current logic.
+                       console.warn(`Original function for "${keyPath}" not found in storage, but it was marked as mocked. Attempting direct restore if possible.`); // Keep warning log
+                       // In a more robust system, you might try to get the original from the core module again.
+                       // For this simplified version, we'll just log a warning and proceed to remove the mock marker.
+                  } else {
+                     throw new Error(`Function "${keyPath}" was not mocked.`);
+                  }
+              } else {
+                 // Restore the original function
+                 module[functionName] = originalFn;
+              }
+
+              // Clean up mock state
+              delete mockedFunctions[keyPath];
+              delete originalModules[keyPath];
+
+              console.log(`Restored function: ${keyPath}`); // Keep informative log
+
+          } else {
+              // Restore all mocked functions
+              console.log("Restoring all mocked functions."); // Keep informative log
+              for (const keyPathToRestore in mockedFunctions) {
+                  try {
+                      this.restore(keyPathToRestore); // Use the single restore logic
+                  } catch (e) {
+                      console.error(`Error restoring "${keyPathToRestore}": ${e.message}`); // Keep error log
+                  }
+              }
+          }
+      },
+      /**
+       * Checks if a specific function is currently mocked.
+       * @param {string} keyPath - The dot-separated path to the function (e.g., "file.readFile").
+       * @returns {boolean} True if the function is mocked, false otherwise.
+       */
+      isMocked(keyPath) {
+          return keyPath in mockedFunctions;
+      },
+      /**
+       * Lists all currently mocked functions.
+       * @returns {string[]} An array of key paths for mocked functions.
+       */
+      listMocks() {
+          return Object.keys(mockedFunctions);
+      }
+  };
+   // Add mock methods to the modules object so they are accessible via env.use('mock')
+   modules.mock = mock;
+
+
+  // --- Plugin System ---
+  /**
+   * @memberof envjs
+   * @namespace plugin
+   * @description Allows registering custom modules.
+   */
+  const plugin = {
+      /**
+       * Registers a new custom module with envjs.
+       * @param {string} name - The name of the new module.
+       * @param {object} moduleContent - The object containing the module's functions and properties.
+       * @throws {Error} If a module with the same name already exists.
+       */
+      register(name, moduleContent) {
+          if (modules[name]) {
+              throw new Error(`Module "${name}" already exists. Cannot register.`);
+          }
+          if (typeof moduleContent !== 'object' || moduleContent === null) {
+              throw new Error(`Invalid module content provided for "${name}". Must be an object.`);
+          }
+          modules[name] = moduleContent;
+          console.log(`Custom module "${name}" registered.`); // Keep informative log
+      }
+  };
+  // Add plugin methods to the modules object
+  modules.plugin = plugin;
+
+
+  // --- Auto-Loader ---
+  /**
+   * @memberof envjs
+   * @namespace loader
+   * @description Provides functionality to load multiple modules at once.
+   */
+  const loader = {
+       /**
+       * Loads multiple envjs modules and returns them in an object.
+       * @param {string[]} moduleNames - An array of module names to load.
+       * @returns {object} An object where keys are module names and values are the corresponding module objects.
+       * @throws {Error} If any of the requested modules do not exist.
+       */
+      load(moduleNames) {
+          if (!Array.isArray(moduleNames)) {
+              throw new Error("moduleNames must be an array.");
+          }
+          const loadedModules = {};
+          for (const name of moduleNames) {
+              const mod = modules[name];
+              if (!mod) {
+                  throw new Error(`Module "${name}" does not exist.`);
+              }
+              loadedModules[name] = mod;
+          }
+          console.log(`Loaded modules: ${moduleNames.join(', ')}`); // Keep informative log
+          return loadedModules;
+      }
+  };
+   // Add loader methods to the modules object
+   modules.loader = loader;
+
+
+  // Initialize the monitor after all modules are defined
+  if (modules.monitor && !modules.monitor._monitoring) {
+      modules._initMonitor.call(modules); // Use .call to set 'this' correctly
+  }
+
 
   return {
     /**
@@ -841,253 +1715,70 @@ export default function envjs() {
      * @returns {string[]} An array of available module names.
      */
     availableModules() {
-      return Object.keys(modules);
+      return Object.keys(modules).filter(name => !name.startsWith('_')); // Exclude internal modules
+    },
+     /**
+     * Loads multiple envjs modules and returns them in an object.
+     * This is a convenience alias for `env.use('loader').load()`.
+     * @param {string[]} moduleNames - An array of module names to load.
+     * @returns {object} An object where keys are module names and values are the corresponding module objects.
+     * @throws {Error} If any of the requested modules do not exist.
+     * @example
+     * const env = envjs();
+     * const { file, os } = env.load(['file', 'os']);
+     * console.log(os.platform());
+     */
+    load(moduleNames) {
+        return modules.loader.load(moduleNames);
+    },
+     /**
+     * Mocks a specific function within an envjs module for testing.
+     * This is a convenience alias for `env.use('mock').mock()`.
+     * @param {string} keyPath - The dot-separated path to the function (e.g., "file.readFile", "http.fetch").
+     * @param {function} mockFn - The function to use as a mock.
+     * @throws {Error} If the module or function does not exist.
+     * @example
+     * const env = envjs();
+     * env.mock('file.readFile', (filename) => `Mocked content for ${filename}`);
+     * const file = env.use('file');
+     * file.readFile('test.txt').then(content => console.log(content)); // Outputs: Mocked content for test.txt
+     * env.restore('file.readFile'); // Restore original behavior
+     */
+    mock(keyPath, mockFn) {
+        return modules.mock.mock(keyPath, mockFn);
+    },
+    /**
+     * Restores a mocked function to its original implementation.
+     * If no keyPath is provided, all mocked functions are restored.
+     * This is a convenience alias for `env.use('mock').restore()`.
+     * @param {string} [keyPath] - The dot-separated path to the function to restore (e.g., "file.readFile").
+     * @throws {Error} If the keyPath is invalid or the function was not mocked.
+     * @example
+     * // After mocking file.readFile
+     * env.restore('file.readFile');
+     * // Restore all mocks
+     * env.restore();
+     */
+    restore(keyPath) {
+         return modules.mock.restore(keyPath);
+    },
+     /**
+     * Registers a new custom module with envjs.
+     * This is a convenience alias for `env.use('plugin').register()`.
+     * @param {string} name - The name of the new module.
+     * @param {object} moduleContent - The object containing the module's functions and properties.
+     * @throws {Error} If a module with the same name already exists.
+     * @example
+     * const env = envjs();
+     * env.register('math', {
+     * square: (n) => n * n,
+     * add: (a, b) => a + b
+     * });
+     * const math = env.use('math');
+     * console.log(math.square(5)); // Outputs: 25
+     */
+    register(name, moduleContent) {
+        return modules.plugin.register(name, moduleContent);
     }
   };
 }
-
-// Example Usage (optional - for testing or demonstration)
-/*
-// To run this example, save it as a .js file (e.g., test-envjs.js)
-// and ensure your package.json has "type": "module" if you're using ES module syntax.
-// Then run: node test-envjs.js
-
-// --- ESM specific setup for __dirname in example script ---
-import { fileURLToPath as _fileURLToPath } from 'url';
-import _path from 'path'; // Use a different name to avoid conflict with env.use('path')
-
-const __example_filename = _fileURLToPath(import.meta.url);
-const __example_dirname = _path.dirname(__example_filename);
-// --- End ESM specific setup ---
-
-
-const env = envjs(); // Initialize envjs
-
-// --- File Module Example ---
-const file = env.use("file");
-file.writeFile(_path.join(__example_dirname, "test.txt"), "Hello from envjs file module!");
-console.log("Does test.txt exist?", file.exists(_path.join(__example_dirname, "test.txt")));
-console.log("Content of test.txt:", file.readFile(_path.join(__example_dirname, "test.txt")));
-file.makeDir(_path.join(__example_dirname, "my_test_dir"));
-console.log("Does my_test_dir exist?", file.exists(_path.join(__example_dirname, "my_test_dir")));
-file.removeDir(_path.join(__example_dirname, "my_test_dir"));
-console.log("Does my_test_dir exist after removal?", file.exists(_path.join(__example_dirname, "my_test_dir")));
-file.deleteFile(_path.join(__example_dirname, "test.txt"));
-
-
-// --- OS Module Example ---
-const osInfo = env.use("os");
-console.log("Current User:", osInfo.currentUserData().username);
-console.log("Free Memory:", (osInfo.freeMem() / (1024 * 1024)).toFixed(2), "MB");
-console.log("Platform:", osInfo.platform());
-
-// --- Path Module Example (using envjs's path) ---
-const pathUtil = env.use("path"); // This is envjs's path module
-const myPath = pathUtil.join(__example_dirname, "some", "file.txt"); // Use __example_dirname
-console.log("Joined Path:", myPath);
-console.log("Dirname:", pathUtil.dirname(myPath));
-console.log("Basename:", pathUtil.basename(myPath));
-console.log("Extname:", pathUtil.extname(myPath));
-
-// --- Process Module Example ---
-const proc = env.use("process");
-console.log("Current Dir:", proc.cwd());
-console.log("Node Version:", proc.version());
-// proc.exit(0); // Be careful with this one!
-
-// --- Child Process Example ---
-const cp = env.use("child_process");
-cp.exec("node -v", (error, stdout, stderr) => {
-  if (error) {
-      console.error("Error getting Node version via exec:", error);
-      return;
-  }
-  console.log("Node version (via exec):", stdout.trim());
-});
-try {
-    const npmVersion = cp.execSync("npm -v", { encoding: 'utf8' });
-    if (npmVersion) {
-        console.log("NPM version (via execSync):", npmVersion.trim());
-    } else {
-        console.log("Could not get NPM version via execSync.");
-    }
-} catch (e) {
-    // execSync throws on error, error handling is in the wrapper now
-    console.error("Failed to get NPM version (execSync threw outside wrapper, or wrapper returned null):", e.message);
-}
-
-
-// --- Crypto Module Example ---
-const cryptoUtil = env.use("crypto");
-const hash = cryptoUtil.createHash("sha256").update("my secret").digest("hex");
-console.log("SHA256 Hash:", hash);
-const random = cryptoUtil.randomBytes(16).toString('hex');
-console.log("Random Bytes (hex):", random);
-
-// --- DNS Module Example ---
-const dnsUtil = env.use("dns");
-dnsUtil.lookup("google.com", (err, address, family) => {
-  if (!err) {
-    console.log("Google.com IP:", address, `(IPv${family})`);
-  } else {
-    console.error("DNS lookup failed for google.com:", err.message);
-  }
-});
-dnsUtil.resolve("google.com", "MX", (err, records) => {
-    if (!err) {
-        console.log("Google.com MX Records:", records);
-    } else {
-        console.error("DNS MX resolve failed for google.com:", err.message);
-    }
-});
-
-
-// --- HTTP Module Example (Server) ---
-// const httpServerInstance = env.use("http").createServer((req, res) => {
-//   res.writeHead(200, { "Content-Type": "text/plain" });
-//   res.end("Hello from envjs HTTP server!\n");
-// });
-// // To stop the server after some time (e.g., 5 seconds for testing)
-// // setTimeout(() => httpServerInstance.close(() => console.log("HTTP server closed.")), 5000);
-
-// --- HTTP Module Example (Client) ---
-env.use("http").get('http://worldtimeapi.org/api/timezone/Europe/London', (res, data, err) => {
-    if (err) {
-        console.error("Error fetching time:", err.message);
-        return;
-    }
-    if (res && res.statusCode === 200 && data) {
-        try {
-            console.log("Current time in London (from worldtimeapi):");
-            const jsonData = JSON.parse(data);
-            console.log(jsonData.datetime);
-        } catch (parseError) {
-            console.error("Error parsing JSON response from time API:", parseError.message);
-        }
-    } else if (res) {
-        console.log("Failed to fetch time, status code:", res.statusCode);
-    } else {
-        console.log("Failed to fetch time, no response object.");
-    }
-});
-
-
-// --- Net Module Example (Server & Client) ---
-// const netModule = env.use("net");
-// const netServer = netModule.createServer((socket) => {
-//   console.log("Client connected to net server");
-//   socket.write("Hello from net server!\r\n");
-//   socket.pipe(socket); // Echo back
-//   socket.on('end', () => console.log('Client disconnected from net server'));
-//   socket.on('error', (err) => console.error('Net server socket error:', err.message));
-// });
-// netServer.listen(8124, () => {
-//   console.log("Net server listening on port 8124");
-
-//   const client = netModule.createConnection({ port: 8124 }, () => {
-//     console.log("Connected to net server as client");
-//     client.write("Hello server from client!\r\n");
-//   });
-//   client.on("data", (data) => {
-//     console.log("Client received:", data.toString());
-//     client.end(); // Close connection after receiving data
-//   });
-//   client.on("end", () => {
-//     console.log("Disconnected from net server as client");
-//     // Ensure server closes after client is done for cleanup
-//     // netServer.close(() => console.log("Net server closed."));
-//   });
-//   client.on('error', (err) => {
-//     console.error('Net client error:', err.message);
-//     // netServer.close(() => console.log("Net server closed due to client error."));
-//   });
-// });
-// // setTimeout(() => { // Auto-close server if net examples are uncommented
-// //     if (netServer && netServer.listening) {
-// //         netServer.close(() => console.log("Net server auto-closed after timeout."));
-// //     }
-// // }, 10000);
-
-
-// --- Stream Module Example ---
-const streamModule = env.use("stream");
-const readable = new streamModule.Readable({
-  read() {} // Implement read if necessary, or push data directly
-});
-const writable = new streamModule.Writable({
-  write(chunk, encoding, callback) {
-    console.log("Writable stream received:", chunk.toString());
-    callback();
-  }
-});
-readable.push("Hello from readable stream!");
-readable.push(null); // End of data (signals EOF)
-
-streamModule.pipe(readable, writable, (err) => {
-    if (err) console.error("Stream pipe example failed:", err);
-    else console.log("Stream pipe example succeeded.");
-});
-
-
-// --- Util Module Example ---
-const utilMod = env.use("util");
-const myObject = { a: 1, b: { c: 2, d: [3, 4] } };
-console.log("Inspected Object:", utilMod.inspect(myObject, { colors: true, depth: null }));
-const formattedString = utilMod.format('Hello %s, you have %d messages.', 'User', 5);
-console.log("Formatted String:", formattedString);
-
-// --- Zlib Module Example ---
-const zlibMod = env.use("zlib");
-const originalText = "This is some text to compress and decompress with zlib!";
-zlibMod.gzip(originalText, (errGzip, compressed) => {
-  if (errGzip) {
-      console.error("Gzip example error:", errGzip);
-      return;
-  }
-  console.log("Compressed (gzip):", compressed.toString('base64'));
-  zlibMod.gunzip(compressed, (errGunzip, decompressed) => {
-    if (errGunzip) {
-        console.error("Gunzip example error:", errGunzip);
-        return;
-    }
-    console.log("Decompressed (gunzip):", decompressed.toString());
-  });
-});
-
-// --- URL Module Example ---
-const urlMod = env.use("url");
-const parsedUrl = urlMod.parse("https://www.example.com:8080/p/a/t/h?query=string&id=123#hash");
-console.log("Parsed URL (legacy):", parsedUrl);
-const formattedUrl = urlMod.format({ protocol: 'http', host: 'localhost', pathname: '/test', search: 'val=1' });
-console.log("Formatted URL (legacy):", formattedUrl);
-
-// Using WHATWG URL API via envjs.url.URL
-const myNewUrl = new urlMod.URL('/foo/bar?baz=1', 'https://example.org/');
-console.log("WHATWG URL href:", myNewUrl.href);
-console.log("WHATWG URL Search Params (baz):", myNewUrl.searchParams.get('baz'));
-
-
-// --- Querystring Module Example ---
-const qsMod = env.use("querystring"); // Note: querystring is deprecated
-const queryObj = qsMod.parse("name=John%20Doe&age=30&city=New%20York");
-console.log("Parsed Query String:", queryObj);
-const queryStringified = qsMod.stringify({ framework: "envjs", version: "1.0" });
-console.log("Stringified Query:", queryStringified);
-
-// --- Events Module Example ---
-const eventsMod = env.use("events");
-const myEmitter = eventsMod.createEmitter();
-myEmitter.on("myevent", (arg1, arg2) => {
-  console.log("MyEvent triggered with:", arg1, arg2);
-});
-myEmitter.emit("myevent", "Hello", "World");
-
-console.log("Available envjs modules:", env.availableModules());
-
-// Add a small delay to allow async operations in examples to complete
-// setTimeout(() => {
-//     console.log("Example script finished.");
-//     // If http/net servers were started and not closed, you might need to manually exit
-//     // proc.exit(0);
-// }, 15000); // Adjust timeout as needed
-*/

@@ -1,0 +1,19 @@
+{
+  "user": {
+    "profile": {
+      "name": {
+        "first": "Should fail"
+      }
+    }
+  },
+  "settings": {
+    "theme": "dark"
+  },
+  "list[0]": "first item",
+  "list[1]": "second item",
+  "nested": {
+    "array[0]": {
+      "item": "nested item"
+    }
+  }
+}

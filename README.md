@@ -3,515 +3,466 @@
 A simple low level control JS library made to ease low level development.
 To install:
 
-```npm install envjsc```  
-### OR
-```yarn add envjsc```
+```bash
+npm install envjs
+```
 
 All modules and documentation can be found on the [EnvJS Site](www.envjs.vercel.app) -> ## NOT MADE YET! It will come in Version 1.1.5!
 
-## Maintained by [Ebaad](https://www.github.com/mebaadwaheed)
-
-## To start a new file:
-```import envjs() from "envjs";```  
-``` const app = envjs();``` 
-
-``` const module = app.use("whatever module you want to use");```  
-```module.someFunction()```  
-### The first two lines are needed and heavily recommended, the second are just made up examples on how to use modules.  
+## Maintained by [Ebaad](https://www.github.com/mebaadwaheed) 
 
 # Available Modules
 ## For every function you have to put () at the end!
 ## You can access the following modules using env.use('moduleName'):
-# Node.js Modules Documentation
 
 You can access the following modules using `env.use('moduleName')`:
 
-- file
-- http
-- os
-- path
-- process
-- child_process
-- crypto
-- dns
-- net
-- stream
-- util
-- zlib
-- url
-- querystring
-- events
+# envjs
 
-## Module: file
-File system operations.
+A lightweight Node.js environment wrapper providing simplified access to core modules and additional utilities.
 
-### readFile(filename, encoding)
-Reads a file.
+## Getting Started
 
-- **filename**: The path to the file. (string)
-- **encoding**: The file encoding. Defaults to "utf8". (string)
-- **Returns**: The file content or null on error. (string|null)
+```javascript
+import envjs from "envjs";
+const app = envjs();
 
-### writeFile(filename, data, encoding)
-Writes data to a file.
+// Access a module
+const file = app.use("file");
 
-- **filename**: The path to the file. (string)
-- **data**: The data to write. (string|Buffer)
-- **encoding**: The file encoding. Defaults to "utf8". (string)
+// Use module methods
+file.writeFileSync("example.txt", "Hello from envjs!");
+console.log(file.readFileSync("example.txt")); // Outputs: Hello from envjs!
+```
 
-### exists(filename)
-Checks if a file exists.
+## Key Features
 
-- **filename**: The path to the file. (string)
-- **Returns**: True if the file exists, false otherwise. (boolean)
+- Simplified access to Node.js core modules (fs, http, os, etc.)
+- Synchronous and asynchronous methods for file operations, HTTP requests, and more
+- Persistent JSON-based storage with store module
+- Task scheduling with scheduler module
+- System monitoring with monitor module
+- Mocking support for testing with mock module
+- Plugin system for extending functionality with plugin module
+- Auto-loading multiple modules with loader module
 
-### readDir(dirPath, options)
-Reads the content of a directory.
+## Available Modules
 
-- **dirPath**: The path to the directory. (string)
-- **options**: Options for reading the directory. Defaults to `{ encoding: "utf8", withFileTypes: false }`. (object)
-- **Returns**: An array of filenames or Dirent objects, or null on error. (string[]|fs.Dirent[]|null)
+Access modules using `app.use('moduleName')`. All methods require parentheses `()` unless specified as properties.
 
-### makeDir(dirPath, options)
-Creates a directory.
+| Module | Description |
+|--------|-------------|
+| file | File system operations (synchronous and asynchronous) |
+| http | HTTP server and client functionality |
+| os | Operating system utilities |
+| path | Path manipulation utilities |
+| process | Node.js process information |
+| child_process | Spawning child processes |
+| crypto | Cryptographic functions |
+| dns | DNS lookup functionality |
+| net | TCP and IPC networking |
+| stream | Stream handling utilities |
+| util | General utility functions |
+| zlib | Compression and decompression |
+| url | URL parsing and formatting |
+| querystring | Query string parsing and serialization |
+| events | Event emitter functionality |
+| store | Persistent JSON-based storage |
+| scheduler | Task scheduling with intervals and timeouts |
+| monitor | System resource monitoring |
+| mock | Mocking functions for testing |
+| plugin | Registering custom modules |
+| loader | Loading multiple modules at once |
 
-- **dirPath**: The path to the directory to create. (string)
-- **options**: Options for creating the directory. Defaults to `{ recursive: false }`. (object)
-- **Returns**: The first directory path created if recursive, undefined otherwise, or null on error. (string|undefined|null)
+## Module Documentation
 
-### deleteFile(filePath)
-Deletes a file.
+### Module: file
 
-- **filePath**: The path to the file. (string)
+File system operations, wrapping Node.js fs module. Provides both synchronous and asynchronous methods.
 
-### removeDir(dirPath, options)
-Removes a directory.
+#### Methods
 
-- **dirPath**: The path to the directory. (string)
-- **options**: Options for removing the directory. Defaults to `{ recursive: false }`. (object)
+- **readFileSync(filename, encoding = "utf8")**
+  - Reads a file synchronously
+  - Returns: File content (string)
+  - Throws: Error if the file cannot be read
 
-### rename(oldPath, newPath)
-Renames a file or directory.
+- **readFile(filename, encoding = "utf8")**
+  - Reads a file asynchronously
+  - Returns: Promise resolving to file content
 
-- **oldPath**: The current path. (string)
-- **newPath**: The new path. (string)
+- **writeFileSync(filename, data, encoding = "utf8")**
+  - Writes data to a file synchronously
+  - Throws: Error if the file cannot be written
 
-### stat(filePath)
-Gets file status.
+- **writeFile(filename, data, encoding = "utf8")**
+  - Writes data to a file asynchronously
+  - Returns: Promise that resolves when the file is written
 
-- **filePath**: The path to the file. (string)
-- **Returns**: File status object or null on error. (fs.Stats|null)
+- **existsSync(filename)**
+  - Checks if a file exists synchronously
+  - Returns: True if the file exists, false otherwise
 
-## Module: http
-HTTP server and client functionality.
+- **exists(filename, mode = fs.constants.F_OK)**
+  - Checks if a file exists asynchronously
+  - Returns: Promise resolving to true if accessible, false otherwise
 
-### createServer(callback)
-Creates an HTTP server. Listens on `process.env.PORT` or 3000 by default.
+- **readDirSync(dirPath, options = { encoding: "utf8", withFileTypes: false })**
+  - Reads directory contents synchronously
+  - Returns: Array of filenames or Dirent objects
 
-- **callback**: Request listener. (function)
-- **Returns**: The HTTP server instance. (http.Server)
+- **readDir(dirPath, options = { encoding: "utf8", withFileTypes: false })**
+  - Reads directory contents asynchronously
+  - Returns: Promise resolving to array of filenames or Dirent objects
 
-### get(url, options, callback)
-Makes an HTTP GET request.
+- **makeDirSync(dirPath, options = { recursive: false })**
+  - Creates a directory synchronously
+  - Returns: First directory path created if recursive, undefined otherwise
 
-- **url**: The URL to request. (string|URL)
-- **options**: Request options. Defaults to {}. (object)
-- **callback**: Callback with the response (res, data, err). (function)
-- **Returns**: The client request object. (http.ClientRequest)
+- **makeDir(dirPath, options = { recursive: false })**
+  - Creates a directory asynchronously
+  - Returns: Promise resolving to first directory path created if recursive
 
-## Module: os
-Operating system related utility functions.
+- **deleteFileSync(filePath)**
+  - Deletes a file synchronously
+  - Throws: Error if the file cannot be deleted
 
-### currentUserData()
-Gets current user information.
+- **deleteFile(filePath)**
+  - Deletes a file asynchronously
+  - Returns: Promise that resolves when the file is deleted
 
-- **Returns**: User information. (os.UserInfo<string>)
+- **removeDirSync(dirPath, options = { recursive: false })**
+  - Removes a directory synchronously
+  - Throws: Error if the directory cannot be removed
 
-### freeMem()
-Gets free system memory in bytes.
+- **removeDir(dirPath, options = { recursive: false })**
+  - Removes a directory asynchronously
+  - Returns: Promise that resolves when the directory is removed
 
-- **Returns**: Free memory. (number)
+- **renameSync(oldPath, newPath)**
+  - Renames a file or directory synchronously
+  - Throws: Error if the file or directory cannot be renamed
 
-### totalMem()
-Gets total system memory in bytes.
+- **rename(oldPath, newPath)**
+  - Renames a file or directory asynchronously
+  - Returns: Promise that resolves when renamed
 
-- **Returns**: Total memory. (number)
+- **statSync(filePath)**
+  - Gets file status synchronously
+  - Returns: File status object (fs.Stats)
 
-### arch()
-Gets the operating system CPU architecture.
+- **stat(filePath)**
+  - Gets file status asynchronously
+  - Returns: Promise resolving to file status object
 
-- **Returns**: CPU architecture (e.g., 'x64', 'arm'). (string)
+#### Example
 
-### cpus()
-Gets an array of objects containing information about each logical CPU core.
+```javascript
+const file = app.use("file");
+await file.writeFile("test.txt", "Hello, World!");
+console.log(await file.readFile("test.txt")); // Outputs: Hello, World!
+console.log(file.existsSync("test.txt")); // Outputs: true
+```
 
-- **Returns**: CPU information. (os.CpuInfo[])
+### Module: http
 
-### hostname()
-Gets the system hostname.
+HTTP server and client functionality, wrapping Node.js http and https modules.
 
-- **Returns**: The hostname. (string)
+#### Methods
 
-### platform()
-Gets the operating system platform.
+- **enableCORS()**
+  - Enables CORS headers for the HTTP server
 
-- **Returns**: Platform (e.g., 'darwin', 'win32', 'linux'). (string)
+- **createServer(callback)**
+  - Creates an HTTP server, listening on process.env.PORT or 3000 by default
+  - Returns: HTTP server instance (http.Server)
 
-### release()
-Gets the operating system release.
+- **get(url, options = {}, callback)**
+  - Makes an HTTP GET request (Node.js style)
+  - Returns: Client request object (http.ClientRequest)
 
-- **Returns**: OS release. (string)
+- **fetch(url, options = {})**
+  - Makes an HTTP request with a fetch-like interface
+  - Returns: Promise resolving to Response object
 
-### uptime()
-Gets the system uptime in seconds.
+#### Example
 
-- **Returns**: Uptime. (number)
+```javascript
+const http = app.use("http");
+http.enableCORS();
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Hello, World!");
+});
 
-## Module: path
-Path manipulation utilities.
+const response = await http.fetch("http://localhost:3000");
+console.log(await response.text()); // Outputs: Hello, World!
+```
 
-### join(...paths)
-Joins all given path segments together using the platform-specific separator.
+### Module: os
 
-- **...paths**: Path segments. (string)
-- **Returns**: The joined path. (string)
+Operating system utilities, wrapping Node.js os module.
 
-### resolve(...paths)
-Resolves a sequence of paths or path segments into an absolute path.
+#### Methods
 
-- **...paths**: Path segments. (string)
-- **Returns**: The resolved absolute path. (string)
+- **userInfo()** - Gets current user information
+- **freemem()** - Gets free system memory in bytes
+- **totalmem()** - Gets total system memory in bytes
+- **arch()** - Gets the operating system CPU architecture
+- **cpus()** - Gets information about each logical CPU core
+- **hostname()** - Gets the system hostname
+- **platform()** - Gets the operating system platform
+- **release()** - Gets the operating system release
+- **uptime()** - Gets the system uptime in seconds
+- **loadavg()** - Gets the average system load over the last 1, 5, and 15 minutes
 
-### dirname(p)
-Returns the directory name of a path.
+#### Example
 
-- **p**: The path. (string)
-- **Returns**: The directory name. (string)
+```javascript
+const os = app.use("os");
+console.log(os.platform()); // Outputs: e.g., "linux"
+console.log(os.freemem()); // Outputs: Free memory in bytes
+```
 
-### basename(p, ext)
-Returns the last portion of a path.
+### Module: path
 
-- **p**: The path. (string)
-- **ext**: An optional extension to remove from the result. (string)
-- **Returns**: The basename. (string)
+Path manipulation utilities, wrapping Node.js path module.
 
-### extname(p)
-Returns the extension of the path.
+#### Methods
 
-- **p**: The path. (string)
-- **Returns**: The extension. (string)
+- **join(...paths)** - Joins path segments using the platform-specific separator
+- **resolve(...paths)** - Resolves path segments into an absolute path
+- **dirname(p)** - Returns the directory name of a path
+- **basename(p, ext)** - Returns the last portion of a path
+- **extname(p)** - Returns the extension of the path
+- **normalize(p)** - Normalizes a path, resolving ".." and "." segments
+- **sep** - Platform-specific path segment separator (property)
 
-### normalize(p)
-Normalizes the given path, resolving '..' and '.' segments.
+#### Example
 
-- **p**: The path. (string)
-- **Returns**: The normalized path. (string)
+```javascript
+const path = app.use("path");
+console.log(path.join("dir", "file.txt")); // Outputs: dir/file.txt (on Unix)
+console.log(path.extname("file.txt")); // Outputs: .txt
+```
 
-### sep
-The platform-specific path segment separator.
+### Module: process
 
-- **Type**: string
-
-## Module: process
 Information about the current Node.js process.
 
-### cwd()
-Gets the current working directory.
+#### Methods
 
-- **Returns**: The current working directory. (string)
+- **cwd()** - Gets the current working directory
+- **env()** - Gets environment variables
+- **argv()** - Gets command line arguments
+- **version()** - Gets the Node.js version
+- **memoryUsage()** - Gets memory usage information
+- **exit(code = 0)** - Exits the process
+- **pid()** - Gets the process ID (PID)
+- **title()** - Gets the process title
 
-### env()
-Gets environment variables.
+#### Example
 
-- **Returns**: Environment variables. (object)
+```javascript
+const process = app.use("process");
+console.log(process.cwd()); // Outputs: Current directory
+console.log(process.env().NODE_ENV); // Outputs: e.g., "development"
+```
 
-### argv()
-Gets command line arguments.
+### Module: child_process
 
-- **Returns**: Command line arguments. (string[])
+Spawning child processes, wrapping Node.js child_process module.
 
-### version()
-Gets the Node.js version.
+#### Methods
 
-- **Returns**: Node.js version. (string)
+- **spawn(command, args = [], options = {})** - Spawns a new process
+- **exec(command, options = {}, callback)** - Executes a command in a shell (callback-based)
+- **execAsync(command, options = {})** - Executes a command in a shell (Promise-based)
+- **execSync(command, options = {})** - Executes a command in a shell synchronously
 
-### memoryUsage()
-Gets memory usage information.
+#### Example
 
-- **Returns**: Memory usage details. (object)
+```javascript
+const cp = app.use("child_process");
+const { stdout } = await cp.execAsync("echo Hello");
+console.log(stdout); // Outputs: Hello
+```
 
-### exit(code)
-Exits the process.
+### Module: crypto
 
-- **code**: Exit code. Defaults to 0. (number)
+Cryptographic functions, wrapping Node.js crypto module.
 
-### pid()
-Gets the process ID (PID).
+#### Methods
 
-- **Returns**: The PID. (number)
+- **createHash(algorithm)** - Creates a Hash object
+- **randomBytes(size)** - Generates random bytes
+- **createHmac(algorithm, key)** - Creates an HMAC object
 
-### title()
-Gets the process title.
+#### Example
 
-- **Returns**: The process title. (string)
+```javascript
+const crypto = app.use("crypto");
+const hash = crypto.createHash("sha256").update("data").digest("hex");
+console.log(hash); // Outputs: SHA-256 hash
+```
 
-## Module: child_process
-Functionality for spawning child processes.
+### Module: dns
 
-### spawn(command, args, options)
-Spawns a new process using the given command.
+DNS lookup functionality, wrapping Node.js dns module.
 
-- **command**: The command to run. (string)
-- **args**: List of string arguments. Defaults to []. (string[])
-- **options**: Options for spawning the process. Defaults to {}. (object)
-- **Returns**: The spawned child process or null on error. (child_process.ChildProcess|null)
+#### Methods
 
-### exec(command, options, callback)
-Spawns a shell and executes a command within that shell.
+- **lookup(hostname, callback)** - Resolves a hostname to an IP address (callback-based)
+- **lookupAsync(hostname)** - Resolves a hostname to an IP address (Promise-based)
+- **resolve(hostname, rrtype = "A", callback)** - Resolves a hostname to DNS records (callback)
+- **resolveAsync(hostname, rrtype = "A")** - Resolves a hostname to DNS records (Promise)
 
-- **command**: The command to run. (string)
-- **options**: Options for exec. Defaults to {}. (object)
-- **callback**: Callback with error, stdout, and stderr. (function)
-- **Returns**: The spawned child process. (child_process.ChildProcess)
+#### Example
 
-### execSync(command, options)
-Synchronously spawns a shell and executes a command.
+```javascript
+const dns = app.use("dns");
+const { address } = await dns.lookupAsync("google.com");
+console.log(address); // Outputs: IP address
+```
 
-- **command**: The command to run. (string)
-- **options**: Options for execSync. Defaults to {}. (object)
-- **Returns**: The stdout from the command, or null on error. (Buffer|string|null)
+### Module: store
 
-## Module: crypto
-Cryptographic functionality.
+Persistent JSON-based storage, saved to .envjs-store.json.
 
-### createHash(algorithm)
-Creates and returns a Hash object.
+#### Methods
 
-- **algorithm**: e.g., 'sha256', 'md5'. (string)
-- **Returns**: The Hash object. (crypto.Hash)
+- **get(keyPath, defaultValue)** - Gets a value using dot notation
+- **set(keyPath, value)** - Sets a value using dot notation, creating nested objects as needed
+- **delete(keyPath)** - Deletes a value using dot notation
+- **all()** - Gets the entire store data
 
-### randomBytes(size)
-Generates cryptographically strong pseudo-random data.
+#### Example
 
-- **size**: The number of bytes to generate. (number)
-- **Returns**: The random bytes. (Buffer)
+```javascript
+const store = app.use("store");
+store.set("user.name", "Alice");
+console.log(store.get("user.name")); // Outputs: Alice
+store.delete("user.name");
+console.log(store.get("user.name", "Unknown")); // Outputs: Unknown
+```
 
-### createHmac(algorithm, key)
-Creates and returns an Hmac object.
+### Module: scheduler
 
-- **algorithm**: The algorithm to use. (string)
-- **key**: The HMAC key. (string|Buffer|crypto.KeyObject)
-- **Returns**: The Hmac object. (crypto.Hmac)
+Task scheduling with setInterval and setTimeout.
 
-## Module: dns
-DNS lookup functionality.
+#### Methods
 
-### lookup(hostname, callback)
-Resolves a hostname (e.g., 'google.com') into the first found A (IPv4) or AAAA (IPv6) record.
+- **every(interval, callback, id)** - Schedules a repeating task
+- **once(delay, callback, id)** - Schedules a one-time task
+- **stop(id)** - Stops a scheduled task
+- **list()** - Lists all scheduled task IDs
 
-- **hostname**: The hostname to resolve. (string)
-- **callback**: Callback with (err, address, family). (function)
+#### Example
 
-### resolve(hostname, rrtype, callback)
-Resolves a hostname into an array of record types specified by rrtype.
+```javascript
+const scheduler = app.use("scheduler");
+const id = scheduler.every("5s", () => console.log("Tick!"));
+setTimeout(() => scheduler.stop(id), 15000); // Stops after 15 seconds
+```
 
-- **hostname**: The hostname to resolve. (string)
-- **rrtype**: Resource record type (e.g., 'A', 'AAAA', 'MX', 'TXT'). Defaults to "A". (string)
-- **callback**: Callback with (err, records). (function)
+### Module: monitor
 
-## Module: net
-Networking functionality (TCP, IPC).
+System resource monitoring via an EventEmitter. Emits events every 5 seconds.
 
-### createServer(options, connectionListener)
-Creates a new TCP or IPC server.
+#### Events
 
-- **options**: Options for the server. (object)
-- **connectionListener**: Listener for 'connection' event. (function)
-- **Returns**: The server instance. (net.Server)
+- **memory** - Process memory usage (object)
+- **freemem** - Free system memory (number)
+- **totalmem** - Total system memory (number)
+- **memusage** - Memory usage details ({ free, total, percent })
+- **cpus** - CPU information (os.CpuInfo[])
+- **loadavg** - Load averages (number[])
+- **uptime** - System uptime (number)
+- **error** - Monitoring errors (Error)
 
-### createConnection(options, connectListener)
-Creates a new TCP or IPC connection.
+#### Example
 
-- **options**: Port, path, or options object. ((number|string|object))
-- **connectListener**: Listener for 'connect' event. (function)
-- **Returns**: The socket instance. (net.Socket)
+```javascript
+const monitor = app.use("monitor");
+monitor.on("memory", (usage) => console.log("Memory:", usage));
+```
 
-## Module: stream
-API for working with streaming data.
+### Module: mock
 
-### Readable
-The Readable stream class.
+Mocking functions for testing.
 
-- **Type**: stream.Readable
+#### Methods
 
-### Writable
-The Writable stream class.
+- **mock(keyPath, mockFn)** - Mocks a function
+- **restore(keyPath?)** - Restores a mocked function or all mocks
+- **isMocked(keyPath)** - Checks if a function is mocked
+- **listMocks()** - Lists all mocked functions
 
-- **Type**: stream.Writable
+#### Example
 
-### Duplex
-The Duplex stream class.
+```javascript
+const mock = app.use("mock");
+mock.mock("file.readFile", () => Promise.resolve("Mocked!"));
+console.log(await app.use("file").readFile("test.txt")); // Outputs: Mocked!
+mock.restore("file.readFile");
+```
 
-- **Type**: stream.Duplex
+### Module: plugin
 
-### Transform
-The Transform stream class.
+Registering custom modules.
 
-- **Type**: stream.Transform
+#### Methods
 
-### pipeline
-A promisified version of stream.pipeline. A utility function for piping streams together and passing errors.
+- **register(name, moduleContent)** - Registers a custom module
 
-- **Type**: (...streams: (NodeJS.ReadableStream | NodeJS.WritableStream | NodeJS.ReadWriteStream)[], callback?: (err: NodeJS.ErrnoException | null) => void) => Promise<void> (Promisified version)
+#### Example
 
-### finished
-A promisified version of stream.finished. A utility function to get a promise which is fulfilled when a stream is finished or errors.
+```javascript
+const plugin = app.use("plugin");
+plugin.register("math", {
+  square: (n) => n * n,
+});
 
-- **Type**: (stream: NodeJS.ReadableStream | NodeJS.WritableStream | NodeJS.ReadWriteStream, options?: stream.FinishedOptions) => Promise<void> (Promisified version)
+const math = app.use("math");
+console.log(math.square(5)); // Outputs: 25
+```
 
-### pipe(source, destination, callback)
-A utility function for piping streams and handling errors.
+### Module: loader
 
-- **source**: The source readable stream. (stream.Readable)
-- **destination**: The destination writable stream. (stream.Writable)
-- **callback**: Called when piping is complete or an error occurs. (function)
+Loading multiple modules at once.
 
-## Module: util
-Utility functions.
+#### Methods
 
-### promisify(original)
-Promisifies a function that follows the error-first callback style.
+- **load(moduleNames)** - Loads multiple modules
 
-- **original**: The function to promisify. (function)
-- **Returns**: The promisified function. (function(...any): Promise<any>)
+#### Example
 
-### inherits(constructor, superConstructor)
-Inherits the prototype methods from one constructor into another.
+```javascript
+const loader = app.use("loader");
+const { file, os } = loader.load(["file", "os"]);
+console.log(os.platform()); // Outputs: e.g., "linux"
+```
 
-- **constructor**: The child constructor. (function)
-- **superConstructor**: The parent constructor. (function)
-- **Deprecated**: Node.js recommends using ES6 classes and extends instead.
+## Instance Methods
 
-### inspect(objectToInspect, optionsOrShowHidden, depth, colors)
-Returns a string representation of an object, useful for debugging.
+These methods are available directly on the envjs instance:
 
-- **objectToInspect**: The object to inspect. (any)
-- **optionsOrShowHidden**: Inspection options or boolean for showHidden. Defaults to false. (object|boolean)
-- **depth**: Inspection depth. (number)
-- **colors**: Whether to use colors. (boolean)
-- **Returns**: The formatted string. (string)
+- **use(name)** - Accesses a module
+- **availableModules()** - Lists all available modules
+- **load(moduleNames)** - Loads multiple modules (alias for loader.load)
+- **mock(keyPath, mockFn)** - Mocks a function (alias for mock.mock)
+- **restore(keyPath?)** - Restores mocked functions (alias for mock.restore)
+- **register(name, moduleContent)** - Registers a custom module (alias for plugin.register)
 
-### format(format, ...params)
-Formats a string using printf-like placeholders.
+## Notes
 
-- **format**: The format string. (string)
-- **...params**: Values to insert. (...any)
-- **Returns**: The formatted string. (string)
+- Asynchronous methods (e.g., readFile, fetch) return Promises and should be used with await or .then()
+- Synchronous methods (e.g., readFileSync, execSync) may block the event loop and should be used cautiously
+- The store module persists data to .envjs-store.json in the current working directory
+- The scheduler module supports interval strings like "5s" (seconds), "1m" (minutes), "1h" (hours), and "1d" (days)
+- The monitor module runs automatically and emits events every 5 seconds
+- Mocking is intended for testing and should be restored after tests to avoid side effects
 
-## Module: zlib
-Compression and decompression functionality.
+## License
 
-### gzip(input, callback)
-Compresses data using gzip.
-
-- **input**: The data to compress. (Buffer|string)
-- **callback**: Callback with (error, result). (function)
-
-### gunzip(input, callback)
-Decompresses gzip data.
-
-- **input**: The data to decompress. (Buffer|string)
-- **callback**: Callback with (error, result). (function)
-
-### deflate(input, callback)
-Compresses data using deflate.
-
-- **input**: The data to compress. (Buffer|string)
-- **callback**: Callback with (error, result). (function)
-
-### inflate(input, callback)
-Decompresses deflate data.
-
-- **input**: The data to decompress. (Buffer|string)
-- **callback**: Callback with (error, result). (function)
-
-## Module: url
-URL parsing and resolution.
-
-### parse(urlString, parseQueryString, slashesDenoteHost)
-Parses a URL string into an object (legacy API).
-
-- **urlString**: The URL string to parse. (string)
-- **parseQueryString**: If true, the query property will always be set to an object. Defaults to false. (boolean)
-- **slashesDenoteHost**: If true, //foo/bar will be parsed as { host: 'foo', pathname: '/bar' }. Defaults to false. (boolean)
-- **Returns**: The parsed URL object. (object)
-
-### format(urlObject)
-Takes a parsed URL object and returns a formatted URL string (legacy API).
-
-- **urlObject**: The URL object to format. (object|URL)
-- **Returns**: The formatted URL string. (string)
-
-### resolve(from, to)
-Resolves a target URL relative to a base URL (legacy API).
-
-- **from**: The base URL. (string)
-- **to**: The target URL. (string)
-- **Returns**: The resolved URL. (string)
-- **Deprecated**: Use `new URL(to, from).href` with the WHATWG URL API.
-
-### URL
-The WHATWG URL class constructor from Node's 'url' module.
-
-- **Type**: typeof NodeURL
-
-## Module: querystring
-Utilities for parsing and formatting URL query strings.
-
-- **Deprecated**: Node.js recommends using URLSearchParams from the WHATWG URL API.
-
-### parse(str, sep, eq, options)
-Parses a URL query string into an object.
-
-- **str**: The query string to parse. (string)
-- **sep**: The substring used to delimit key and value pairs. Defaults to '&'. (string)
-- **eq**: The substring used to delimit keys and values. Defaults to '='. (string)
-- **options**: Options for decoding. (object)
-- **Returns**: The parsed query string object. (object)
-
-### stringify(obj, sep, eq, options)
-Serializes an object into a URL query string.
-
-- **obj**: The object to serialize. (object)
-- **sep**: The substring used to delimit key and value pairs. Defaults to '&'. (string)
-- **eq**: The substring used to delimit keys and values. Defaults to '='. (string)
-- **options**: Options for encoding. (object)
-- **Returns**: The formatted query string. (string)
-
-## Module: events
-Event emitter functionality.
-
-### EventEmitter
-The EventEmitter class.
-
-- **Type**: events.EventEmitter
-
-### createEmitter()
-Creates a new EventEmitter instance.
-
-- **Returns**: A new EventEmitter. (events.EventEmitter)
-
-## envjs Instance Methods
-The object returned by calling `envjs()` has the following methods:
-
-### use(name)
-Accesses a specific module from the envjs collection.
-
-- **name**: The name of the module to use (e.g., "file", "os", "http"). (string)
-- **Returns**: The requested module. (object)
-- **Throws**: Error if the module does not exist.
-
-### availableModules()
-Lists all available modules in envjs.
-
-- **Returns**: An array of available module names. (string[])
+MIT License. See LICENSE for details.
